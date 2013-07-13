@@ -59,7 +59,7 @@ macro timeit(ex,name,desc)
             @printf "julia,%s,%f,%f,%f,%f\n" $name min(t) max(t) mean(t) std(t)
         end
         if codespeed
-            submit_to_codespeed( t, $name, $desc, "s", "seconds" )
+            submit_to_codespeed( t, $name, $desc, "seconds", "Time" )
         end
         gc()
     end
@@ -75,7 +75,7 @@ macro timeit1(ex,name,desc)
             @printf "julia,%s,%f,%f,%f,%f\n" $name t t t NaN
         end
         if codespeed
-            submit_to_codespeed( [t], $name, $desc, "s", "seconds" )
+            submit_to_codespeed( [t], $name, $desc, "seconds", "Time" )
         end
         gc()
     end
