@@ -22,7 +22,7 @@ end
 # are constant across all benchmarks, so we'll just let them sit here for now
 csdata = Dict()
 #csdata["commitid"] = Base.BUILD_INFO.commit
-csdata["commitid"] = Base.COMMIT_VERSION
+csdata["commitid"] = Base.VERSION_COMMIT
 csdata["project"] = "Julia"
 #csdata["branch"] = Base.BUILD_INFO.branch
 csdata["branch"] = ENV["JULIA_BRANCH"]
