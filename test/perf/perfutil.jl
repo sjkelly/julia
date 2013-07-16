@@ -2,35 +2,42 @@ const ntrials = 5
 print_output = isempty(ARGS)
 codespeed = length(ARGS) > 0 && ARGS[1] == "codespeed"
 
-using JSON
-using Curl
-
-# Ensure that we've got the environment variables we want:
-if !haskey(ENV, "JULIA_FLAVOR")
-    error( "You must provide the JULIA_FLAVOR environment variable identifying this julia build!" )
+try
+    Pkg.init()
+    Pkg.add("JSON")
+    Pkg.add("Curl")
 end
 
-if !haskey(ENV, "JULIA_BRANCH")
-    error( "You must provide the JULIA_BRANCH environment variable identifying the branch this julia build grows on!" )
+if( codespeed )
+    using JSON
+    using Curl
+
+    # Ensure that we've got the environment variables we want:
+    if !haskey(ENV, "JULIA_FLAVOR")
+        error( "You must provide the JULIA_FLAVOR environment variable identifying this julia build!" )
+    end
+
+    if !haskey(ENV, "JULIA_BRANCH")
+        error( "You must provide the JULIA_BRANCH environment variable identifying the branch this julia build grows on!" )
+    end
+
+    if !haskey(ENV, "JULIA_COMMIT_DATE")
+        error( "You must provide the JULIA_COMMIT_DATE environment variable in the form YYYY-MM-DD HH:MM:SS[TZ]" )
+    end
+
+    # Setup codespeed data dict for submissions to codespeed's JSON endpoint.  These parameters
+    # are constant across all benchmarks, so we'll just let them sit here for now
+    csdata = Dict()
+    #csdata["commitid"] = Base.BUILD_INFO.commit
+    csdata["commitid"] = Base.VERSION_COMMIT
+    csdata["project"] = "Julia"
+    #csdata["branch"] = Base.BUILD_INFO.branch
+    csdata["branch"] = ENV["JULIA_BRANCH"]
+    csdata["executable"] = ENV["JULIA_FLAVOR"]
+    csdata["environment"] = chomp(readall(`hostname`))
+    #csdata["result_date"] = join( split(Base.BUILD_INFO.date_string)[1:2], " " )    #Cut the timezone out
+    csdata["result_date"] = join( split(ENV["JULIA_COMMIT_DATE"])[1:2], " " )    #Cut the timezone out
 end
-
-if !haskey(ENV, "JULIA_COMMIT_DATE")
-    error( "You must provide the JULIA_COMMIT_DATE environment variable in the form YYYY-MM-DD HH:MM:SS[TZ]" )
-end
-
-# Setup codespeed data dict for submissions to codespeed's JSON endpoint.  These parameters
-# are constant across all benchmarks, so we'll just let them sit here for now
-csdata = Dict()
-#csdata["commitid"] = Base.BUILD_INFO.commit
-csdata["commitid"] = Base.VERSION_COMMIT
-csdata["project"] = "Julia"
-#csdata["branch"] = Base.BUILD_INFO.branch
-csdata["branch"] = ENV["JULIA_BRANCH"]
-csdata["executable"] = ENV["JULIA_FLAVOR"]
-csdata["environment"] = chomp(readall(`hostname`))
-#csdata["result_date"] = join( split(Base.BUILD_INFO.date_string)[1:2], " " )    #Cut the timezone out
-csdata["result_date"] = join( split(ENV["JULIA_COMMIT_DATE"])[1:2], " " )    #Cut the timezone out
-
 
 # Takes in the raw array of values in vals, along with the benchmark name, description, unit and whether less is better
 function submit_to_codespeed(vals,name,desc,unit,unit_title,lessisbetter=true)
