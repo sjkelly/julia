@@ -21,4 +21,4 @@ clean:
 	$(MAKE) -C micro $@
 	$(MAKE) -C shootout $@
 
-.PHONY: micro kernel cat shootout clean sort
+.PHONY: micro kernel cat shootout blas sort clean
