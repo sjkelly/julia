@@ -39,7 +39,7 @@ if codespeed
 end
 
 # Takes in the raw array of values in vals, along with the benchmark name, description, unit and whether less is better
-function submit_to_codespeed(vals,name,desc,unit,unit_title,lessisbetter=true)
+function submit_to_codespeed(vals,name,desc,unit,test_group,lessisbetter=true)
     # Points to the server 
     codespeed_host = "128.52.160.154"
 
@@ -50,7 +50,7 @@ function submit_to_codespeed(vals,name,desc,unit,unit_title,lessisbetter=true)
     csdata["min"] = min(vals)
     csdata["max"] = max(vals)
     csdata["units"] = unit
-    csdata["units_title"] = unit_title
+    csdata["units_title"] = test_group
     csdata["lessisbetter"] = lessisbetter
 
     println( "$name: $(mean(vals))" )
@@ -62,7 +62,20 @@ function submit_to_codespeed(vals,name,desc,unit,unit_title,lessisbetter=true)
     return true
 end
 
-macro timeit(ex,name,desc)
+macro output_timings(t,name,desc,group)
+    quote
+        # If we weren't given anything for the test group, infer off of file path!
+        test_group = length(group) == 0 ? split(Base.source_path(), "/")[end-1] : $group[1]
+        if codespeed
+            submit_to_codespeed( $t, $name, $desc, "seconds", test_group )
+        elseif print_output
+            @printf "julia,%s,%f,%f,%f,%f\n" $name min($t) max($t) mean($t) std($t)
+        end
+        gc()        
+    end
+end
+
+macro timeit(ex,name,desc,group...)
     quote
         t = zeros(ntrials)
         for i=0:ntrials
@@ -72,13 +85,7 @@ macro timeit(ex,name,desc)
                 t[i] = e
             end
         end
-        if print_output
-            @printf "julia,%s,%f,%f,%f,%f\n" $name min(t) max(t) mean(t) std(t)
-        end
-        if codespeed
-            submit_to_codespeed( t, $name, $desc, "seconds", "Time" )
-        end
-        gc()
+        @output_timings t $name $desc $group
     end
 end
 
@@ -88,13 +95,7 @@ macro timeit1(ex,name,desc)
         for i=0:1
             t = 1000*(@elapsed $(esc(ex)))
         end
-        if print_output
-            @printf "julia,%s,%f,%f,%f,%f\n" $name t t t NaN
-        end
-        if codespeed
-            submit_to_codespeed( [t], $name, $desc, "seconds", "Time" )
-        end
-        gc()
+        @output_timings [t] $name $desc $group
     end
 end
 
