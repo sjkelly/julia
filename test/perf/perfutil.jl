@@ -65,7 +65,7 @@ end
 macro output_timings(t,name,desc,group)
     quote
         # If we weren't given anything for the test group, infer off of file path!
-        test_group = length(group) == 0 ? split(Base.source_path(), "/")[end-1] : $group[1]
+        test_group = length($group) == 0 ? split(Base.source_path(), "/")[end-1] : $group[1]
         if codespeed
             submit_to_codespeed( $t, $name, $desc, "seconds", test_group )
         elseif print_output
