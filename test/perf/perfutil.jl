@@ -89,7 +89,7 @@ macro timeit(ex,name,desc,group...)
     end
 end
 
-macro timeit1(ex,name,desc)
+macro timeit1(ex,name,desc,group...)
     quote
         t = 0.0
         for i=0:1
