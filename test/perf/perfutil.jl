@@ -2,15 +2,14 @@ const ntrials = 5
 print_output = isempty(ARGS)
 codespeed = length(ARGS) > 0 && ARGS[1] == "codespeed"
 
-try
-    Pkg.init()
-    Pkg.add("JSON")
-    Pkg.add("Curl")
-end
-
-if( codespeed )
-    using JSON
-    using Curl
+if codespeed
+    try
+        Pkg.init()
+        Pkg.add("JSON")
+        Pkg.add("Curl")
+    end
+    usingmodule("JSON")
+    usingmodule("Curl")
 
     # Ensure that we've got the environment variables we want:
     if !haskey(ENV, "JULIA_FLAVOR")
