@@ -10,7 +10,7 @@ function listn1n2(n1::Int,n2::Int)
     l1
 end
 
-@timeit listn1n2(1,10^6) "cons" ""
+@timeit listn1n2(1,10^6) "cons" "List concatenation"
 gc()
 
 # issue #1211
