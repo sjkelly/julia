@@ -32,7 +32,7 @@ y = [500000:-1:1];
 
 # issue #938
 x = 1:600000;
-@timeit sparse(x,x,x) "sparserang" "Construction of a sparse array from ranges"
+@timeit sparse(x,x,x) "sparserange" "Construction of a sparse array from ranges"
 
 # issue #445
 include("stockcorr.jl")
