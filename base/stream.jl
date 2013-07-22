@@ -631,10 +631,10 @@ function _uv_hook_writecb(s::AsyncStream, req::Ptr{Void}, status::Int32)
     nothing
 end
 
-
+const allow_nocpy_writes = false
 function write(s::AsyncStream, b::Uint8)
     check_open(s)
-    if isdefined(Base,:Scheduler) && current_task() != Scheduler
+    if isdefined(Main.Base,:Scheduler) && current_task() != Main.Base.Scheduler && allow_nocpy_writes
         req = ccall(:jl_putc_copy, Ptr{Void}, (Uint8, Ptr{Void}, Ptr{Void}), b, handle(s), uv_jl_writecb_task::Ptr{Void})
         uv_req_set_data(req,current_task())
         wait()
@@ -645,7 +645,7 @@ function write(s::AsyncStream, b::Uint8)
 end
 function write(s::AsyncStream, c::Char)
     check_open(s)
-    if isdefined(Base,:Scheduler) && current_task() != Scheduler
+    if isdefined(Main.Base,:Scheduler) && current_task() != Main.Base.Scheduler && allow_nocpy_writes
         req = ccall(:jl_pututf8_copy, Ptr{Void}, (Ptr{Void},Uint32, Ptr{Void}), handle(s), c, uv_jl_writecb_task::Ptr{Void})
         uv_req_set_data(req,current_task())
         wait()
@@ -657,7 +657,7 @@ end
 function write{T}(s::AsyncStream, a::Array{T})
     check_open(s)
     if isbits(T)
-        if isdefined(Base,:Scheduler) && current_task() != Scheduler
+        if isdefined(Main.Base,:Scheduler) && current_task() != Main.Base.Scheduler && allow_nocpy_writes
             req = ccall(:jl_write_no_copy, Ptr{Void}, (Ptr{Void}, Ptr{Void}, Uint, Ptr{Void}), handle(s), a, uint(length(a)*sizeof(T)), uv_jl_writecb_task::Ptr{Void})
             uv_error("write", req == C_NULL)
             uv_req_set_data(req,current_task())
@@ -672,7 +672,7 @@ function write{T}(s::AsyncStream, a::Array{T})
 end
 function write(s::AsyncStream, p::Ptr, nb::Integer)
     check_open(s)
-    if isdefined(Base,:Scheduler) && current_task() != Scheduler
+    if isdefined(Main.Base,:Scheduler) && current_task() != Main.Base.Scheduler && allow_nocpy_writes
         req = ccall(:jl_write_no_copy, Ptr{Void}, (Ptr{Void}, Ptr{Void}, Uint, Ptr{Void}), handle(s), p, nb, uv_jl_writecb_task::Ptr{Void})
         uv_error("write", req == C_NULL)
         uv_req_set_data(req,current_task())
