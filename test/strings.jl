@@ -399,6 +399,7 @@ end
 for i = 1:endof(u8str)
     @test search(u8str, "", i) == i:i-1
 end
+@test search("", "") == 1:0
 
 # string rsearch with a zero-char string
 for i = 1:endof(astr)
@@ -407,6 +408,7 @@ end
 for i = 1:endof(u8str)
     @test rsearch(u8str, "", i) == i:i-1
 end
+@test rsearch("", "") == 1:0
 
 # string search with a zero-char regex
 for i = 1:endof(astr)
