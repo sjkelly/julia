@@ -1002,13 +1002,12 @@ end
 
 function label_counter(body)
     l = 0
-    for i=1:length(body)
-        b = body[i]
-        if isa(b,LabelNode) && b.label >= l
-            l = b.label
+    for b in body
+        if isa(b,LabelNode) && (b::LabelNode).label > l
+            l = (b::LabelNode).label
         end
     end
-    l + 1
+    l
 end
 genlabel(sv) = ln(sv.label_counter += 1)
 
@@ -1569,6 +1568,7 @@ function occurs_more(e::ANY, pred, n)
     return pred(e) ? 1 : 0
 end
 
+
 function exprtype(x::ANY)
     if isa(x,Expr)
         return x.typ
@@ -1716,13 +1716,18 @@ function inlineable(f, e::Expr, atypes, sv, enclosing_ast)
             return NF
         end
     end
-    body = without_linenums(ast.args[3].args)::Array{Any,1}
-    # see if body is only "return <expr>"
-    if length(body) != 1
-        return NF
+
+    body = Expr(:block)
+    body.args = without_linenums(ast.args[3].args)::Array{Any,1}
+    # see if body is only "return <expr>", or starts with :inline
+    if length(body.args) != 1
+        if isa(body.args[1],QuoteNode) && (body.args[1]::QuoteNode).value === :inline
+            shift!(body.args)
+        else
+            return NF
+        end
     end
-    assert(isa(body[1],Expr), "inference.jl:1050")
-    assert(is(body[1].head,:return), "inference.jl:1051")
+
     # check for vararg function
     args = f_argnames(ast)
     na = length(args)
@@ -1731,19 +1736,19 @@ function inlineable(f, e::Expr, atypes, sv, enclosing_ast)
         vararg = mk_tuplecall(argexprs[na:end])
         argexprs = {argexprs[1:(na-1)]..., vararg}
     end
-    expr = body[1].args[1]
 
-    # avoid capture if the function has free variables with the same name
-    # as our vars
-    if occurs_more(expr, x->(isa(x,Symbol)&&!is_global(sv,x)&&!contains_is(args,x)), 0) > 0
-        return NF
-    end
+    if needcopy; body = astcopy(body); end
+
+    spnames = { sp[i].name for i=1:2:length(sp) }
+
+    # avoid capturing free variables in enclosing function with the same name as in our function
+    unique_names(body, spnames, spvals, args, sv, enclosing_ast)
 
     stmts = {}
     # see if each argument occurs only once in the body expression
     for i=1:length(args)
         a = args[i]
-        occ = occurs_more(expr, x->is(x,a), 1)
+        occ = occurs_more(body, x->is(x,a), 1)
         if occ != 1
             aei = argexprs[i]; aeitype = exprtype(aei)
             # ok for argument to occur more than once if the actual argument
@@ -1763,13 +1768,70 @@ function inlineable(f, e::Expr, atypes, sv, enclosing_ast)
     end
 
     # ok, substitute argument expressions for argument names in the body
-    spnames = { sp[i].name for i=1:2:length(sp) }
-    if needcopy; expr = astcopy(expr); end
     mfrom = meth[3].module; mto = (inference_stack::CallStack).mod
     if !is(mfrom, mto)
-        expr = resolve_globals(expr, mfrom, mto, args, spnames)
+        body = resolve_globals(body, mfrom, mto, args, spnames)
     end
-    return (sym_replace(expr, args, spnames, argexprs, spvals), stmts)
+    body = sym_replace(body, args, spnames, argexprs, spvals)
+
+    # make labels / goto statements unique
+    newlabels = zeros(Int,label_counter(body.args)+1)
+    for i = 1:length(body.args)
+        a = body.args[i]
+        if isa(a,LabelNode)
+            a = a::LabelNode
+            newlabel = genlabel(sv)
+            newlabels[a.label+1] = newlabel.label
+            body.args[i] = newlabel
+        end
+    end
+    for i = 1:length(body.args)
+        a = body.args[i]
+        if isa(a,GotoNode)
+            a = a::GotoNode
+            body.args[i] = gn(newlabels[a.label+1])
+        elseif isa(a,Expr)
+            a = a::Expr
+            if a.head === :gotoifnot
+                a.args[2] = newlabels[a.args[2]+1]
+            end
+        end
+    end
+
+    # convert return statements into a series of goto's
+    retstmt = genlabel(sv)
+    retval = unique_name(enclosing_ast)
+    multiret = false
+    lastexpr = pop!(body.args)
+    assert(isa(lastexpr,Expr), "inference.jl:1774")
+    assert(is(lastexpr.head,:return), "inference.jl:1775")
+    for a in body.args
+        push!(stmts, a)
+        if isa(a,Expr)
+            a = a::Expr
+            if a.head === :return
+                multiret = true
+                a.head = :(=)
+                unshift!(a.args, retval)
+                push!(stmts, gn(retstmt))
+            end
+        end
+    end
+    if multiret
+        lastexpr.head = :(=)
+        rettype = exprtype(ast.args[3])
+        if rettype!==Any
+            retval = SymbolNode(retval,rettype)
+        end
+        unshift!(lastexpr.args, retval)
+        push!(stmts, lastexpr)
+        push!(stmts, retstmt)
+        add_variable(enclosing_ast, retval, rettype)
+        expr = retval
+    else
+        expr = lastexpr.args[1]
+    end
+    return (expr, stmts)
 end
 
 tn(sym::Symbol) =
@@ -2033,6 +2095,33 @@ function unique_name(ast)
         g = gensym()
     end
     g
+end
+
+function unique_names(e::ANY, old, new, env, sv, ast)
+    if isa(e,Expr)
+        e = e::Expr
+        for a = e.args
+            unique_names(a, old, new, env, sv, ast)
+        end
+        return
+    end
+    if isa(e,SymbolNode)
+        aeitype = exprtype(e)
+        s = (e::SymbolNode).name
+    elseif isa(e,Symbol)
+        aeitype = Any
+        s = e::Symbol
+    else
+        return
+    end
+    if is_global(sv,s) || contains_is(env,s)
+        return
+    end
+    vnew = unique_name(ast)
+    add_variable(ast, vnew, aeitype)
+    push!(old, e)
+    push!(new, aeitype===Any ? vnew : SymbolNode(vnew,aeitype))
+    return
 end
 
 function is_known_call(e::Expr, func, sv)
