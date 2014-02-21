@@ -9,8 +9,10 @@
 #include "../src/julia.h"
 
 #ifndef JL_SYSTEM_IMAGE_PATH
-#define JL_SYSTEM_IMAGE_PATH ".." PATHSEPSTRING "lib" PATHSEPSTRING "julia" PATHSEPSTRING "sys.ji"
+#error "JL_SYSTEM_IMAGE_PATH not defined!"
 #endif
+
+char system_image[256] = JL_SYSTEM_IMAGE_PATH;
 
 static int lisp_prompt = 0;
 static int codecov=0;
@@ -58,7 +60,7 @@ void parse_opts(int *argcp, char ***argvp)
     int c;
     opterr = 0;
     int imagepathspecified=0;
-    image_file = JL_SYSTEM_IMAGE_PATH;
+    image_file = system_image;
     int skip = 0;
     int lastind = optind;
     while ((c = getopt_long(*argcp,*argvp,shortopts,longopts,0)) != -1) {
@@ -118,12 +120,12 @@ void parse_opts(int *argcp, char ***argvp)
     }
     if (image_file) {
         if (image_file[0] != PATHSEP) {
-            struct stat stbuf;
+            uv_stat_t stbuf;
             char path[512];
             if (!imagepathspecified) {
                 // build time path relative to JULIA_HOME
-                snprintf(path, sizeof(path), "%s%s",
-                         julia_home, PATHSEPSTRING JL_SYSTEM_IMAGE_PATH);
+                snprintf(path, sizeof(path), "%s%s%s",
+                         julia_home, PATHSEPSTRING, system_image);
                 image_file = strdup(path);
             }
             else if (jl_stat(image_file, (char*)&stbuf) != 0) {
@@ -155,8 +157,6 @@ static int exec_program(void)
  again: ;
     JL_TRY {
         if (err) {
-            //jl_lisp_prompt();
-            //return 1;
             jl_value_t *errs = jl_stderr_obj();
             jl_value_t *e = jl_exception_in_transit;
             if (errs != NULL) {
@@ -289,7 +289,6 @@ int main(int argc, char *argv[])
     libsupport_init();
     parse_opts(&argc, &argv);
     if (lisp_prompt) {
-        jl_init_frontend();
         jl_lisp_prompt();
         return 0;
     }

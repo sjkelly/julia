@@ -1,19 +1,31 @@
+# linalg tests take the longest - start them off first
 testnames = [
-    "core", "keywordargs", "numbers", "strings", "unicode",
-    "collections", "hashing", "remote", "iobuffer", "arrayops", "linalg",
+    "linalg1", "linalg2", "core", "keywordargs", "numbers", "strings",
+    "collections", "hashing", "remote", "iobuffer", "arrayops",
     "blas", "fft", "dsp", "sparse", "bitarray", "random", "math",
-    "functional", "bigint", "sorting", "statistics", "spawn", "parallel",
+    "functional", "bigint", "sorting", "statistics", "spawn",
     "priorityqueue", "arpack", "file", "suitesparse", "version",
     "resolve", "pollfd", "mpfr", "broadcast", "complex", "socket",
     "floatapprox", "readdlm", "regex", "float16", "combinatorics",
-    "sysinfo", "rounding", "ranges", "mod2pi", "euler"
+    "sysinfo", "rounding", "ranges", "mod2pi", "euler", "show"
 ]
+@unix_only push!(testnames, "unicode")
+
+# parallel tests depend on other workers - do them last
+push!(testnames, "parallel")
 
 tests = ARGS==["all"] ? testnames : ARGS
 
+if "linalg" in tests
+    # specifically selected case
+    filter!(x -> x != "linalg", tests)
+    prepend!(tests, ["linalg1", "linalg2"])
+end
+
+
 n = min(8, CPU_CORES, length(tests))
 
-@unix_only n > 1 && addprocs(n)
+n > 1 && addprocs(n)
 
 blas_set_num_threads(1)
 

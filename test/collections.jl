@@ -147,6 +147,30 @@ d4[1001] = randstring(3)
 @test !isequal({1 => 2}, {"dog" => "bone"})
 @test isequal(Dict{Int, Int}(), Dict{String, String}())
 
+# get! (get with default values assigned to the given location)
+
+let f(x) = x^2,
+    d = {8=>19},
+    def = {}
+
+    @test get!(d, 8, 5) == 19
+    @test get!(d, 19, 2) == 2
+
+    @test get!(d, 42) do  # d is updated with f(2)
+        f(2)
+    end == 4
+
+    @test get!(d, 42) do  # d is not updated
+        f(200)
+    end == 4
+
+    @test get(d, 13) do   # d is not updated
+        f(4)
+    end == 16
+
+    @test d == {8=>19, 19=>2, 42=>4}
+end
+
 # issue #2540
 d = {x => 1
     for x in ['a', 'b', 'c']}
@@ -273,6 +297,9 @@ end
 
 @test setdiff(IntSet(1, 2, 3, 4), IntSet(2, 4, 5, 6)) == IntSet(1, 3)
 @test setdiff(Set(1, 2, 3, 4), Set(2, 4, 5, 6)) == Set(1, 3)
+
+@test symdiff(IntSet(1, 2, 3, 4), IntSet(2, 4, 5, 6)) == IntSet(1, 3, 5, 6)
+@test symdiff(Set(1, 2, 3, 4), Set(2, 4, 5, 6)) == Set(1, 3, 5, 6)
 
 s1 = Set(1, 2, 3, 4)
 setdiff!(s1, Set(2, 4, 5, 6))

@@ -1,48 +1,60 @@
-type SharedArray{T,N} <: AbstractArray{T,N}
+type SharedArray{T,N} <: DenseArray{T,N}
     dims::NTuple{N,Int}
     pids::Vector{Int}
     refs::Array{RemoteRef}
     
+    # The segname is currently used only in the test scripts to ensure that 
+    # the shmem segment has been unlinked.
+    segname::String
+    
     # Fields below are not to be serialized
     # Local shmem map. 
-    loc_shmarr::Array{T,N}
+    s::Array{T,N}
     
     # idx of current workers pid into the pids vector, 0 if this shared array is not mapped locally.
-    loc_pididx::Int
+    pidx::Int
     
     # the local partition into the array when viewed as a single dimensional array.
+    # this can be removed when @parallel or its equivalent supports looping on 
+    # a subset of workers.
     loc_subarr_1d
     
-    SharedArray(d,p,r) = new(d,p,r)
+    SharedArray(d,p,r,sn) = new(d,p,r,sn)
 end
 
-function SharedArray(T::Type, dims::NTuple; init=false, pids=workers())
+function SharedArray(T::Type, dims::NTuple; init=false, pids=Int[])
     N = length(dims)
 
     !isbits(T) ? error("Type of Shared Array elements must be bits types") : nothing
     @windows_only error(" SharedArray is not supported on Windows yet.")
     
-    len_sa = prod(dims)
-    if length(pids) > len_sa
-        pids = pids[1:len_sa]
+    if isempty(pids)
+        # only use workers on the current host
+        pids = procs(myid())
+        onlocalhost = true
+    else
+        onlocalhost = assert_same_host(pids)
     end
     
-    onlocalhost = assert_same_host(pids)
+    len_S = prod(dims)
+    if length(pids) > len_S
+        pids = pids[1:len_S]
+    end
 
     local shm_seg_name = ""
-    local loc_shmarr 
-    local sa = nothing 
+    local s 
+    local S = nothing 
     local shmmem_create_pid
     try
         # On OSX, the shm_seg_name length must be < 32 characters
         shm_seg_name = string("/jl", getpid(), int64(time() * 10^9)) 
         if onlocalhost
             shmmem_create_pid = myid()
-            loc_shmarr = shm_mmap_array(T, dims, shm_seg_name, JL_O_CREAT | JL_O_RDWR)
+            s = shm_mmap_array(T, dims, shm_seg_name, JL_O_CREAT | JL_O_RDWR)
         else
-            # The shared array is being created on a remote machine....
+            # The shared array is created on a remote machine....
             shmmem_create_pid = pids[1]
-            remotecall(pids[1], () -> begin shm_mmap_array(T, dims, shm_seg_name, JL_O_CREAT | JL_O_RDWR); nothing end) 
+            remotecall_fetch(pids[1], () -> begin shm_mmap_array(T, dims, shm_seg_name, JL_O_CREAT | JL_O_RDWR); nothing end) 
         end
 
         func_mapshmem = () -> shm_mmap_array(T, dims, shm_seg_name, JL_O_RDWR)
@@ -61,26 +73,26 @@ function SharedArray(T::Type, dims::NTuple; init=false, pids=workers())
         if onlocalhost
             shm_unlink(shm_seg_name)
         else
-            remotecall(shmmem_create_pid, shm_unlink, shm_seg_name)  
+            remotecall_fetch(shmmem_create_pid, shm_unlink, shm_seg_name)  
         end
+        S = SharedArray{T,N}(dims, pids, refs, shm_seg_name)
         shm_seg_name = "" 
         
-        sa = SharedArray{T,N}(dims, pids, refs)
         if onlocalhost
-            init_loc_flds(sa)
+            init_loc_flds(S)
             
-            # In the event that myid() is not part of pids, loc_shmarr will not be set 
+            # In the event that myid() is not part of pids, s will not be set 
             # in the init function above, hence setting it here if available.
-            sa.loc_shmarr = loc_shmarr
+            S.s = s
         else
-            sa.loc_pididx = 0 
+            S.pidx = 0 
         end
         
         # if present init function is called on each of the parts
         @sync begin 
             if isa(init, Function)
                 for p in pids
-                    @async remotecall_wait(p, init, sa)
+                    @async remotecall_wait(p, init, S)
                 end
             end
         end
@@ -90,21 +102,32 @@ function SharedArray(T::Type, dims::NTuple; init=false, pids=workers())
             remotecall_fetch(shmmem_create_pid, shm_unlink, shm_seg_name)  
         end
     end
-    sa
+    S
 end
 
 SharedArray(T, I::Int...; kwargs...) = SharedArray(T, I; kwargs...)
 
 
-length(sa::SharedArray) = prod(sa.dims)
-size(sa::SharedArray) = sa.dims
-procs(sa::SharedArray) = sa.pids
+length(S::SharedArray) = prod(S.dims)
+size(S::SharedArray) = S.dims
 
+procs(S::SharedArray) = S.pids
+indexpids(S::SharedArray) = S.pididx
 
+sdata(S::SharedArray) = S.s
+sdata(A::AbstractArray) = A
 
-function range_1dim(sa::SharedArray, n) 
-    l = length(sa)
-    nw = length(sa.pids)
+localindexes(S::SharedArray) = S.pidx > 0 ? range_1dim(S, S.pidx) : error("SharedArray is not mapped to this process")
+
+convert{T}(::Type{Ptr{T}}, S::SharedArray) = convert(Ptr{T}, sdata(S))
+
+convert(::Type{SharedArray}, A::Array) = (S = SharedArray(eltype(A), size(A)); copy!(S, A))
+convert{T}(::Type{SharedArray{T}}, A::Array) = (S = SharedArray(T, size(A)); copy!(S, A))
+convert{TS,TA,N}(::Type{SharedArray{TS,N}}, A::Array{TA,N}) = (S = SharedArray(TS, size(A)); copy!(S, A))
+
+function range_1dim(S::SharedArray, n) 
+    l = length(S)
+    nw = length(S.pids)
     partlen = div(l, nw)
 
     if n == nw
@@ -114,54 +137,54 @@ function range_1dim(sa::SharedArray, n)
     end
 end
 
-sub_1dim(sa::SharedArray, n) = sub(sa.loc_shmarr, range_1dim(sa, n))
+sub_1dim(S::SharedArray, n) = sub(S.s, range_1dim(S, n))
 
-function init_loc_flds(sa)
-    if myid() in sa.pids
-        sa.loc_pididx = findfirst(sa.pids, myid())
-        sa.loc_shmarr = fetch(sa.refs[sa.loc_pididx])
-        sa.loc_subarr_1d = sub_1dim(sa, sa.loc_pididx)
+function init_loc_flds(S)
+    if myid() in S.pids
+        S.pidx = findfirst(S.pids, myid())
+        S.s = fetch(S.refs[S.pidx])
+        S.loc_subarr_1d = sub_1dim(S, S.pidx)
     else
-        sa.loc_pididx = 0
+        S.pidx = 0
     end
 end
 
 
-# Don't serialize loc_shmarr (it is the complete array) and 
+# Don't serialize s (it is the complete array) and 
 # pididx, which is relevant to the current process only
-function serialize(s, sa::SharedArray)
-    serialize_type(s, typeof(sa))
+function serialize(s, S::SharedArray)
+    serialize_type(s, typeof(S))
     serialize(s, length(SharedArray.names)) 
     for n in SharedArray.names
-        if n in [:loc_shmarr, :loc_pididx, :loc_subarr_1d]
+        if n in [:s, :pidx, :loc_subarr_1d]
             writetag(s, UndefRefTag)
         else
-            serialize(s, getfield(sa, n)) 
+            serialize(s, getfield(S, n)) 
         end
     end
 end
 
 function deserialize{T,N}(s, t::Type{SharedArray{T,N}})
-    sa = invoke(deserialize, (Any, DataType), s, t)
-    init_loc_flds(sa)
-    if (sa.loc_pididx == 0) 
+    S = invoke(deserialize, (Any, DataType), s, t)
+    init_loc_flds(S)
+    if (S.pidx == 0) 
         error("SharedArray cannot be used on a non-participating process")
     end
-    sa
+    S
 end
 
-convert(::Type{Array}, S::SharedArray) = S.loc_shmarr
+convert(::Type{Array}, S::SharedArray) = S.s
 
 # # pass through getindex and setindex! - they always work on the complete array unlike DArrays
-getindex(S::SharedArray) = getindex(S.loc_shmarr)
-getindex(S::SharedArray,I::AbstractArray) = getindex(S.loc_shmarr,I)
-getindex(S::SharedArray,I::Range1) = getindex(S.loc_shmarr,I)
-getindex(S::SharedArray,I::Real...) = getindex(S.loc_shmarr, I...)
+getindex(S::SharedArray) = getindex(S.s)
+getindex(S::SharedArray, I::Real) = getindex(S.s, I)
+getindex(S::SharedArray, I::AbstractArray) = getindex(S.s, I)
+@nsplat N 1:5 getindex(S::SharedArray, I::NTuple{N,Any}...) = getindex(S.s, I...)
 
-setindex!(S::SharedArray, x) = (setindex!(S.loc_shmarr, x); S)
-setindex!(S::SharedArray, x, I::Real...) = (setindex!(S.loc_shmarr, x, I...); S)
-setindex!(S::SharedArray, x, I::AbstractArray) = (setindex!(S.loc_shmarr, x, I); S)
-setindex!(S::SharedArray, x, I::Range1) = (setindex!(S.loc_shmarr, x, I); S)
+setindex!(S::SharedArray, x) = (setindex!(S.s, x); S)
+setindex!(S::SharedArray, x, I::Real) = (setindex!(S.s, x, I); S)
+setindex!(S::SharedArray, x, I::AbstractArray) = (setindex!(S.s, x, I); S)
+@nsplat N 1:5 setindex!(S::SharedArray, x, I::NTuple{N,Any}...) = (setindex!(S.s, x, I...); S)
 
 # convenience constructors
 function shmem_fill(v, dims; kwargs...) 
@@ -188,6 +211,7 @@ function shmem_randn(dims; kwargs...)
 end
 shmem_randn(I::Int...; kwargs...) = shmem_randn(I; kwargs...)
 
+similar(S::SharedArray, T, dims::Dims) = similar(S.s, T, dims)
 
 
 function print_shmem_limits(slen)
@@ -216,9 +240,7 @@ function shm_mmap_array(T, dims, shm_seg_name, mode)
     local A = nothing 
     try
         fd_mem = shm_open(shm_seg_name, mode, S_IRUSR | S_IWUSR)
-        if !(fd_mem > 0) 
-            error("shm_open() failed") 
-        end
+        systemerror("shm_open() failed for " * shm_seg_name, fd_mem <= 0)
 
         s = fdio(fd_mem, true)
         
@@ -226,13 +248,10 @@ function shm_mmap_array(T, dims, shm_seg_name, mode)
         # and only at creation time
         if (mode & JL_O_CREAT) == JL_O_CREAT
             rc = ccall(:ftruncate, Int, (Int, Int), fd_mem, prod(dims)*sizeof(T))
-            if rc != 0
-                ec = errno()
-                error("ftruncate() failed, errno : ", ec) 
-            end
+            systemerror("ftruncate() failed for shm segment " * shm_seg_name, rc != 0)
         end
         
-        A = mmap_array(T, dims, s, 0, grow=false)
+        A = mmap_array(T, dims, s, zero(FileOffset), grow=false)
     catch e
         print_shmem_limits(prod(dims)*sizeof(T))
         rethrow(e)
@@ -249,6 +268,7 @@ end
 function shm_unlink(shm_seg_name) 
     rc = ccall(:shm_unlink, Cint, (Ptr{Uint8},), shm_seg_name)
     systemerror("Error unlinking shmem segment " * shm_seg_name, rc != 0)
+    rc
 end
 end
 
@@ -256,18 +276,11 @@ end
 
 
 function assert_same_host(procs)
-    myip = 
-    resp = Array(Any, length(procs))
-    
-    @sync begin
-        for (i, p) in enumerate(procs)
-            @async resp[i] = remotecall_fetch(p, () -> getipaddr())
-        end
-    end
-    
-    if !all(x->x==resp[1], resp) 
+    first_privip = getprivipaddr(procs[1])
+    if !all(x -> getprivipaddr(x) == first_privip, procs) 
         error("SharedArray requires all requested processes to be on the same machine.")
     end
     
-    return (resp[1] != getipaddr()) ? false : true
+    return (first_privip != getipaddr()) ? false : true
 end
+

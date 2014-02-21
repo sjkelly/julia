@@ -25,6 +25,7 @@
 #endif
 
 #include "julia.h"
+#include "julia_internal.h"
 #include "support/ios.h"
 #include "uv.h"
 
@@ -34,6 +35,13 @@ extern "C" {
 #endif
 
 /** libuv callbacks */
+
+enum CALLBACK_TYPE { CB_PTR, CB_INT32, CB_INT64 };
+#ifdef _P64
+#define CB_INT CB_INT64
+#else
+#define CB_INT CB_INT32
+#endif
 
 /*
  * Notes for adding new callbacks
@@ -57,7 +65,9 @@ extern "C" {
     XX(isopen) \
     XX(fseventscb) \
     XX(writecb) \
-    XX(writecb_task)
+    XX(writecb_task) \
+    XX(recv) \
+    XX(send)
 //TODO add UDP and other missing callbacks
 
 #define JULIA_HOOK_(m,hook)  ((jl_function_t*)jl_get_global(m, jl_symbol("_uv_hook_" #hook)))
@@ -65,9 +75,9 @@ extern "C" {
 #define XX(hook) static jl_function_t *JULIA_HOOK(hook) = 0;
 JL_CB_TYPES(XX)
 #undef XX
-DLLEXPORT void jl_get_uv_hooks()
+DLLEXPORT void jl_get_uv_hooks(int force)
 {
-    if (JULIA_HOOK(close)) return; // only do this once
+    if (!force && JULIA_HOOK(close)) return; // only do this once
 #define XX(hook) JULIA_HOOK(hook) = JULIA_HOOK_(jl_base_module, hook);
     JL_CB_TYPES(XX)
 #undef XX
@@ -128,6 +138,7 @@ jl_value_t *jl_callback_call(jl_function_t *f,jl_value_t *val,int count,...)
             break;
         }
     }
+    va_end(argp);
     v = jl_apply(f,(jl_value_t**)argv,count);
     JL_GC_POP();
     return v;
@@ -219,6 +230,19 @@ DLLEXPORT void jl_uv_fspollcb(uv_fs_poll_t* handle, int status, const uv_stat_t*
 DLLEXPORT void jl_uv_fseventscb(uv_fs_event_t* handle, const char* filename, int events, int status)
 {
     JULIA_CB(fseventscb,handle->data,3,CB_PTR,filename,CB_INT32,events,CB_INT32,status)
+    (void)ret;
+}
+
+DLLEXPORT void jl_uv_recvcb(uv_udp_t* handle, ssize_t nread, uv_buf_t buf, struct sockaddr* addr, unsigned flags)
+{
+    JULIA_CB(recv,handle->data,5,CB_PTR,nread,CB_PTR,(buf.base),CB_INT32,buf.len,CB_PTR,addr,CB_INT32,flags)
+    (void)ret;
+}
+
+DLLEXPORT void jl_uv_sendcb(uv_udp_send_t* handle, int status)
+{
+    JULIA_CB(send,handle->data,1,CB_INT32,status)
+    free(handle);
     (void)ret;
 }
 
@@ -330,7 +354,7 @@ DLLEXPORT int jl_spawn(char *name, char **argv, uv_loop_t *loop,
                        uv_handle_type stdin_type, uv_pipe_t *stdin_pipe,
                        uv_handle_type stdout_type, uv_pipe_t *stdout_pipe,
                        uv_handle_type stderr_type, uv_pipe_t *stderr_pipe, 
-                       int detach, char **env)
+                       int detach, char **env, char *cwd)
 {
     uv_process_options_t opts;
     uv_stdio_container_t stdio[3];
@@ -342,7 +366,7 @@ DLLEXPORT int jl_spawn(char *name, char **argv, uv_loop_t *loop,
 #else
     opts.flags = UV_PROCESS_RESET_SIGPIPE;
 #endif
-    opts.cwd = NULL;
+    opts.cwd = cwd;
     opts.args = argv;
     if (detach)
         opts.flags |= UV_PROCESS_DETACHED;
@@ -687,6 +711,55 @@ DLLEXPORT int jl_tcp_bind6(uv_tcp_t* handle, uint16_t port, void *host)
     memcpy(&addr.sin6_addr, host, 16);
     addr.sin6_family = AF_INET6;
     return uv_tcp_bind6(handle, addr);
+}
+
+DLLEXPORT int jl_udp_bind(uv_udp_t* handle, uint16_t port, uint32_t host, uint32_t flags)
+{
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(struct sockaddr_in));
+    addr.sin_port = port;
+    addr.sin_addr.s_addr = host;
+    addr.sin_family = AF_INET;
+    return uv_udp_bind(handle, addr, flags);
+}
+DLLEXPORT int jl_udp_bind6(uv_udp_t* handle, uint16_t port, void *host, uint32_t flags)
+{
+    struct sockaddr_in6 addr;
+    memset(&addr, 0, sizeof(struct sockaddr_in6));
+    addr.sin6_port = port;
+    memcpy(&addr.sin6_addr, host, 16);
+    addr.sin6_family = AF_INET6;
+    return uv_udp_bind6(handle, addr, flags);
+}
+
+DLLEXPORT int jl_udp_send(uv_udp_t* handle, uint16_t port, uint32_t host, void *data, uint32_t size)
+{
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(struct sockaddr_in));
+    addr.sin_port = port;
+    addr.sin_addr.s_addr = host;
+    addr.sin_family = AF_INET;
+    uv_buf_t buf[1];
+    buf[0].base = data;
+    buf[0].len = size;
+    uv_udp_send_t *req = malloc(sizeof(uv_udp_send_t));
+    req->data = handle->data;
+    return uv_udp_send(req, handle, buf, 1, addr, &jl_uv_sendcb);
+}
+
+DLLEXPORT int jl_udp_send6(uv_udp_t* handle, uint16_t port, void *host, void *data, uint32_t size)
+{
+    struct sockaddr_in6 addr;
+    memset(&addr, 0, sizeof(struct sockaddr_in6));
+    addr.sin6_port = port;
+    memcpy(&addr.sin6_addr, host, 16);
+    addr.sin6_family = AF_INET6;
+    uv_buf_t buf[1];
+    buf[0].base = data;
+    buf[0].len = size;
+    uv_udp_send_t *req = malloc(sizeof(uv_udp_send_t));
+    req->data = handle->data;
+    return uv_udp_send6(req, handle, buf, 1, addr, &jl_uv_sendcb);
 }
 
 DLLEXPORT int jl_uv_sizeof_interface_address()

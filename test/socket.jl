@@ -37,9 +37,10 @@ end
 wait(c)
 @test readall(connect(2134)) == "Hello World\n"
 
-isfile("testsocket") && Base.FS.unlink("testsocket")
+socketname = @windows ? "\\\\.\\pipe\\uv-test" : "testsocket"
+@unix_only isfile(socketname) && Base.FS.unlink(socketname)
 @async begin
-	s = listen("testsocket")
+	s = listen(socketname)
 	Base.notify(c)
 	sock = accept(s)
 	write(sock,"Hello World\n")
@@ -47,7 +48,7 @@ isfile("testsocket") && Base.FS.unlink("testsocket")
 	close(sock)
 end
 wait(c)
-@test readall(connect("testsocket")) == "Hello World\n"
+@test readall(connect(socketname)) == "Hello World\n"
 
 try 
     getaddrinfo(".invalid")
@@ -79,3 +80,21 @@ try
 catch e
     @test typeof(e) == Base.UVError
 end
+
+a = UdpSocket()
+b = UdpSocket()
+bind(a,ip"127.0.0.1",2134)
+bind(b,ip"127.0.0.1",2135)
+
+c = Condition()
+@async begin
+    @test bytestring(recv(a)) == "Hello World"
+    notify(c)
+end
+send(b,ip"127.0.0.1",2134,"Hello World")
+wait(c)
+
+@test_throws bind(UdpSocket(),2134)
+
+close(a)
+close(b)

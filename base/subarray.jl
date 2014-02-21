@@ -2,10 +2,10 @@
 
 typealias RangeIndex Union(Int, Range{Int}, Range1{Int})
 
-type SubArray{T,N,A<:AbstractArray,I<:(RangeIndex...,)} <: AbstractArray{T,N}
+type SubArray{T,N,A<:StoredArray,I<:(RangeIndex...,)} <: StoredArray{T,N}
     parent::A
     indexes::I
-    dims::Dims
+    dims::NTuple{N,Int}
     strides::Array{Int,1}  # for accessing parent with linear indexes
     first_index::Int
 
@@ -188,7 +188,6 @@ parentindexes(a::AbstractArray) = ntuple(ndims(a), i->1:size(a,i))
 copy(s::SubArray) = copy!(similar(s.parent, size(s)), s)
 similar(s::SubArray, T, dims::Dims) = similar(s.parent, T, dims)
 
-getindex{T}(s::SubArray{T,0,AbstractArray{T,0}}) = s.parent[]
 getindex{T}(s::SubArray{T,0}) = s.parent[s.first_index]
 
 getindex{T}(s::SubArray{T,1}, i::Integer) =
@@ -355,8 +354,6 @@ function setindex!(s::SubArray, v, is::Integer...)
     return s
 end
 
-setindex!{T}(s::SubArray{T,0,AbstractArray{T,0}},v) = setindex!(s.parent, v)
-
 setindex!{T}(s::SubArray{T,0}, v) = setindex!(s.parent, v, s.first_index)
 
 
@@ -403,6 +400,7 @@ stride(s::SubArray, i::Integer) = i <= length(s.strides) ? s.strides[i] : s.stri
 
 convert{T}(::Type{Ptr{T}}, x::SubArray{T}) =
     pointer(x.parent) + (x.first_index-1)*sizeof(T)
+convert{T,S,N}(::Type{Array{T,N}},A::SubArray{S,N}) = copy!(Array(T,size(A)), A)
 
 pointer(s::SubArray, i::Int) = pointer(s, ind2sub(size(s), i))
 

@@ -38,7 +38,7 @@ begin
     kill(p)
 end
 
-@test_throws run(`foo`)
+@test_throws run(`foo_is_not_a_valid_command`)
 
 if false
     prefixer(prefix, sleep) = `perl -nle '$|=1; print "'$prefix' ", $_; sleep '$sleep';'`
@@ -83,6 +83,7 @@ end
 
 readall(setenv(`sh -c "echo \$TEST"`,["TEST=Hello World"])) == "Hello World\n"
 readall(setenv(`sh -c "echo \$TEST"`,["TEST"=>"Hello World"])) == "Hello World\n"
+readall(setenv(`sh -c "pwd"`;dir="/")) == readall(setenv(`sh -c "cd / && pwd"`))
 
 # Here we test that if we close a stream with pending writes, we don't lose the writes.
 str = ""
@@ -112,9 +113,9 @@ t = @async begin
     @test p.exitcode == 0
 end
 yield()
-Base.interrupt_waiting_task(t, InterruptException())
+schedule(t, InterruptException(), error=true)
 yield()
-put(r,11)
+put!(r,11)
 yield()
 
 

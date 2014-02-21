@@ -1,369 +1,8 @@
+debug = false
+
 import Base.LinAlg
 import Base.LinAlg: BlasComplex, BlasFloat, BlasReal
 
-n     = 10
-srand(1234321)
-
-a = rand(n,n)
-for elty in (Float32, Float64, Complex64, Complex128)
-    a = convert(Matrix{elty}, a)
-    # cond
-    @test_approx_eq_eps cond(a, 1) 4.837320054554436e+02 0.01
-    @test_approx_eq_eps cond(a, 2) 1.960057871514615e+02 0.01
-    @test_approx_eq_eps cond(a, Inf) 3.757017682707787e+02 0.01
-    @test_approx_eq_eps cond(a[:,1:5]) 10.233059337453463 0.01
-end
-
-areal = randn(n,n)
-aimg  = randn(n,n) 
-breal = randn(n,2)
-bimg  = randn(n,2)
-for elty in (Float32, Float64, Complex64, Complex128, Int)
-    if elty == Complex64 || elty == Complex128
-        a = complex(areal, aimg)
-        b = complex(breal, bimg)
-    else
-        a = areal
-        b = breal
-    end
-    if elty <: BlasFloat
-        a = convert(Matrix{elty}, a)
-        b = convert(Matrix{elty}, b)
-    else
-        a = rand(1:10, n, n)
-        b = rand(1:10, n, 2)
-    end
-    asym = a' + a                  # symmetric indefinite
-    apd  = a'*a                    # symmetric positive-definite
-
-    # (Automatic) upper Cholesky factor
-    capd  = factorize(apd)
-    r     = capd[:U]
-    @test_approx_eq r'*r apd
-    @test_approx_eq b apd * (capd\b)
-    @test_approx_eq apd * inv(capd) eye(elty, n)
-    @test_approx_eq a*(capd\(a'*b)) b           # least squares soln for square a
-    @test_approx_eq det(capd) det(apd)
-    @test_approx_eq logdet(capd) log(det(capd)) # logdet is less likely to overflow
-
-    # lower Cholesky factor
-    l = cholfact(apd, :L)[:L] 
-    @test_approx_eq l*l' apd
-
-    # pivoted Choleksy decomposition
-    cpapd = cholfact(apd, pivot=true)
-    @test rank(cpapd) == n
-    @test all(diff(diag(real(cpapd.UL))).<=0.) # diagonal should be non-increasing
-    @test_approx_eq b apd * (cpapd\b)
-    if isreal(apd)
-        @test_approx_eq apd * inv(cpapd) eye(elty, n)
-    end
-
-    # (Automatic) Bunch-Kaufman factor of indefinite matrix
-    bc1 = factorize(asym) 
-    @test_approx_eq inv(bc1) * asym eye(elty, n)
-    @test_approx_eq asym * (bc1\b) b
-
-    # Bunch-Kaufman factors of a pos-def matrix
-    bc2 = bkfact(apd)    
-    @test_approx_eq inv(bc2) * apd eye(elty, n)
-    @test_approx_eq apd * (bc2\b) b
-
-    # (Automatic) Square LU decomposition
-    lua   = factorize(a)
-    l,u,p = lua[:L], lua[:U], lua[:p]
-    @test_approx_eq l*u a[p,:]
-    @test_approx_eq l[invperm(p),:]*u a
-    @test_approx_eq a * inv(lua) eye(elty, n)
-    @test_approx_eq a*(lua\b) b
-
-    # Thin LU
-    lua   = lufact(a[:,1:5])
-    @test_approx_eq lua[:L]*lua[:U] lua[:P]*a[:,1:5]
-
-    # Fat LU
-    lua   = lufact(a[1:5,:])
-    @test_approx_eq lua[:L]*lua[:U] lua[:P]*a[1:5,:]
-
-    # QR decomposition
-    qra   = qrfact(a)
-    q,r   = qra[:Q], qra[:R]
-    @test_approx_eq q'*full(q, thin=false) eye(elty, n)
-    @test_approx_eq q*full(q, thin=false)' eye(elty, n)
-    @test_approx_eq q*r a
-    @test_approx_eq a*(qra\b) b
-
-    # (Automatic) Fat pivoted QR decomposition
-    qrpa  = factorize(a[1:5,:])
-    q,r,p = qrpa[:Q], qrpa[:R], qrpa[:p]
-    @test_approx_eq q'*full(q, thin=false) eye(elty, 5)
-    @test_approx_eq q*full(q, thin=false)' eye(elty, 5)
-    @test_approx_eq q*r a[1:5,p]
-    @test_approx_eq q*r[:,invperm(p)] a[1:5,:]
-    @test_approx_eq a[1:5,:]*(qrpa\b[1:5]) b[1:5]
-
-    # (Automatic) Thin pivoted QR decomposition
-    qrpa  = factorize(a[:,1:5])
-    q,r,p = qrpa[:Q], qrpa[:R], qrpa[:p]
-    @test_approx_eq q'*full(q, thin=false) eye(elty, n)
-    @test_approx_eq q*full(q, thin=false)' eye(elty, n)
-    @test_approx_eq q*r a[:,p]
-    @test_approx_eq q*r[:,invperm(p)] a[:,1:5]
-
-    # symmetric eigen-decomposition
-    d,v   = eig(asym)
-    @test_approx_eq asym*v[:,1] d[1]*v[:,1]
-    @test_approx_eq v*scale(d,v') asym
-
-    # non-symmetric eigen decomposition
-    d,v   = eig(a)
-    for i in 1:size(a,2) @test_approx_eq a*v[:,i] d[i]*v[:,i] end
-
-    # symmetric generalized eigenproblem
-    a610 = a[:,6:10]
-    f = eigfact(asym[1:5,1:5], a610'a610)
-    @test_approx_eq asym[1:5,1:5]*f[:vectors] scale(a610'a610*f[:vectors], f[:values])
-    @test_approx_eq f[:values] eigvals(asym[1:5,1:5], a610'a610)
-    @test_approx_eq prod(f[:values]) prod(eigvals(asym[1:5,1:5]/(a610'a610)))
- 
-    # Non-symmetric generalized eigenproblem
-    f = eigfact(a[1:5,1:5], a[6:10,6:10])
-    @test_approx_eq a[1:5,1:5]*f[:vectors] scale(a[6:10,6:10]*f[:vectors], f[:values])
-    @test_approx_eq f[:values] eigvals(a[1:5,1:5], a[6:10,6:10])
-    @test_approx_eq prod(f[:values]) prod(eigvals(a[1:5,1:5]/a[6:10,6:10]))
-
-    # Schur
-    f = schurfact(a)
-    @test_approx_eq f[:vectors]*f[:Schur]*f[:vectors]' a
-    @test_approx_eq sort(real(f[:values])) sort(real(d))
-    @test_approx_eq sort(imag(f[:values])) sort(imag(d))
-    @test istriu(f[:Schur]) || iseltype(a,Real)
-
-    # Generalized Schur
-    f = schurfact(a[1:5,1:5], a[6:10,6:10]) 
-    @test_approx_eq f[:Q]*f[:S]*f[:Z]' a[1:5,1:5]
-    @test_approx_eq f[:Q]*f[:T]*f[:Z]' a[6:10,6:10]
-    @test istriu(f[:S]) || iseltype(a,Real)
-    @test istriu(f[:T]) || iseltype(a,Real)
-
-    # singular value decomposition
-    usv = svdfact(a)                
-    @test_approx_eq usv[:U]*scale(usv[:S],usv[:Vt]) a
-  
-    # Generalized svd
-    gsvd = svdfact(a,a[1:5,:])
-    @test_approx_eq gsvd[:U]*gsvd[:D1]*gsvd[:R]*gsvd[:Q]' a
-    @test_approx_eq gsvd[:V]*gsvd[:D2]*gsvd[:R]*gsvd[:Q]' a[1:5,:]
-
-    x = a \ b
-    @test_approx_eq a*x b
-    
-    x = triu(a) \ b
-    @test_approx_eq triu(a)*x b
-    
-    x = tril(a)\b
-    @test_approx_eq tril(a)*x b
-   
-    # Test null
-    a15null = null(a[:,1:5]')
-    @test rank([a[:,1:5] a15null]) == 10
-    @test_approx_eq_eps norm(a[:,1:5]'a15null) zero(elty) elty <: Union(Float32, Complex64) ? 1f-5 : 1e-13
-    @test_approx_eq_eps norm(a15null'a[:,1:5]) zero(elty) elty <: Union(Float32, Complex64) ? 1f-5 : 1e-13
-    @test size(null(b), 2) == 0
-
-    # Test pinv
-    pinva15 = pinv(a[:,1:5])
-    @test_approx_eq a[:,1:5]*pinva15*a[:,1:5] a[:,1:5]
-    @test_approx_eq pinva15*a[:,1:5]*pinva15 pinva15
-    
-    # Complex vector rhs
-    x = a\complex(b)
-    @test_approx_eq a*x complex(b)
-
-    if isreal(a)
-        # Matrix square root
-        asq = sqrtm(a)
-        @test_approx_eq asq*asq a
-        asymsq = sqrtm(asym)
-        @test_approx_eq asymsq*asymsq asym
-    end
-end
-
-## Least squares solutions
-a = [ones(20) 1:20 1:20]
-b = reshape(eye(8, 5), 20, 2)
-for elty in (Float32, Float64, Complex64, Complex128)
-    a = convert(Matrix{elty}, a)
-    b = convert(Matrix{elty}, b)
-
-    # Vector rhs
-    x = a[:,1:2]\b[:,1]
-    @test_approx_eq ((a[:,1:2]*x-b[:,1])'*(a[:,1:2]*x-b[:,1]))[1] convert(elty, 2.546616541353384)
-
-    # Matrix rhs
-    x = a[:,1:2]\b
-    @test_approx_eq det((a[:,1:2]*x-b)'*(a[:,1:2]*x-b)) convert(elty, 4.437969924812031)
-
-    # Rank deficient
-    x = a\b
-    @test_approx_eq det((a*x-b)'*(a*x-b)) convert(elty, 4.437969924812031)
-
-    # Underdetermined minimum norm
-    x = convert(Matrix{elty}, [1 0 0; 0 1 -1]) \ convert(Vector{elty}, [1,1])
-    @test_approx_eq x convert(Vector{elty}, [1, 0.5, -0.5])
-
-    # symmetric, positive definite
-    @test_approx_eq inv(convert(Matrix{elty}, [6. 2; 2 1])) convert(Matrix{elty}, [0.5 -1; -1 3])
-
-    # symmetric, indefinite
-    @test_approx_eq inv(convert(Matrix{elty}, [1. 2; 2 1])) convert(Matrix{elty}, [-1. 2; 2 -1]/3)
-end
-
-## Test Julia fallbacks to BLAS routines
-
-# matrices with zero dimensions
-@test ones(0,5)*ones(5,3) == zeros(0,3)
-@test ones(3,5)*ones(5,0) == zeros(3,0)
-@test ones(3,0)*ones(0,4) == zeros(3,4)
-@test ones(0,5)*ones(5,0) == zeros(0,0)
-@test ones(0,0)*ones(0,4) == zeros(0,4)
-@test ones(3,0)*ones(0,0) == zeros(3,0)
-@test ones(0,0)*ones(0,0) == zeros(0,0)
-
-# 2x2
-A = [1 2; 3 4]
-B = [5 6; 7 8]
-@test A*B == [19 22; 43 50]
-@test At_mul_B(A, B) == [26 30; 38 44]
-@test A_mul_Bt(A, B) == [17 23; 39 53]
-@test At_mul_Bt(A, B) == [23 31; 34 46]
-Ai = A+(0.5*im).*B
-Bi = B+(2.5*im).*A[[2,1],[2,1]]
-@test Ai*Bi == [-21+53.5im -4.25+51.5im; -12+95.5im 13.75+85.5im]
-@test Ac_mul_B(Ai, Bi) == [68.5-12im 57.5-28im; 88-3im 76.5-25im]
-@test A_mul_Bc(Ai, Bi) == [64.5+5.5im 43+31.5im; 104-18.5im 80.5+31.5im]
-@test Ac_mul_Bc(Ai, Bi) == [-28.25-66im 9.75-58im; -26-89im 21-73im]
-
-# 3x3
-A = [1 2 3; 4 5 6; 7 8 9]-5
-B = [1 0 5; 6 -10 3; 2 -4 -1]
-@test A*B == [-26 38 -27; 1 -4 -6; 28 -46 15]
-@test Ac_mul_B(A, B) == [-6 2 -25; 3 -12 -18; 12 -26 -11]
-@test A_mul_Bc(A, B) == [-14 0 6; 4 -3 -3; 22 -6 -12]
-@test Ac_mul_Bc(A, B) == [6 -8 -6; 12 -9 -9; 18 -10 -12]
-Ai = A+(0.5*im).*B
-Bi = B+(2.5*im).*A[[2,1,3],[2,3,1]]
-@test Ai*Bi == [-44.75+13im 11.75-25im -38.25+30im; -47.75-16.5im -51.5+51.5im -56+6im; 16.75-4.5im -53.5+52im -15.5im]
-@test Ac_mul_B(Ai, Bi) == [-21+2im -1.75+49im -51.25+19.5im; 25.5+56.5im -7-35.5im 22+35.5im; -3+12im -32.25+43im -34.75-2.5im]
-@test A_mul_Bc(Ai, Bi) == [-20.25+15.5im -28.75-54.5im 22.25+68.5im; -12.25+13im -15.5+75im -23+27im; 18.25+im 1.5+94.5im -27-54.5im]
-@test Ac_mul_Bc(Ai, Bi) == [1+2im 20.75+9im -44.75+42im; 19.5+17.5im -54-36.5im 51-14.5im; 13+7.5im 11.25+31.5im -43.25-14.5im]
-
-# Generic integer matrix multiplication
-A = [1 2 3; 4 5 6] - 3
-B = [2 -2; 3 -5; -4 7]
-@test A*B == [-7 9; -4 9]
-@test At_mul_Bt(A, B) == [-6 -11 15; -6 -13 18; -6 -15 21]
-A = ones(Int, 2, 100)
-B = ones(Int, 100, 3)
-@test A*B == [100 100 100; 100 100 100]
-A = rand(1:20, 5, 5) - 10
-B = rand(1:20, 5, 5) - 10
-@test At_mul_B(A, B) == A'*B
-@test A_mul_Bt(A, B) == A*B'
- 
-# Preallocated
-C = Array(Int, size(A, 1), size(B, 2))
-@test A_mul_B!(C, A, B) == A*B
-@test At_mul_B!(C, A, B) == A'*B
-@test A_mul_Bt!(C, A, B) == A*B'
-@test At_mul_Bt!(C, A, B) == A'*B'
-
-# matrix algebra with subarrays of floats (stride != 1)
-A = reshape(float64(1:20),5,4)
-Aref = A[1:2:end,1:2:end]
-Asub = sub(A, 1:2:5, 1:2:4)
-b = [1.2,-2.5]
-@test (Aref*b) == (Asub*b)
-@test At_mul_B(Asub, Asub) == At_mul_B(Aref, Aref)
-@test A_mul_Bt(Asub, Asub) == A_mul_Bt(Aref, Aref)
-Ai = A + im
-Aref = Ai[1:2:end,1:2:end]
-Asub = sub(Ai, 1:2:5, 1:2:4)
-@test Ac_mul_B(Asub, Asub) == Ac_mul_B(Aref, Aref)
-@test A_mul_Bc(Asub, Asub) == A_mul_Bc(Aref, Aref)
-
-# syrk & herk
-A = reshape(1:1503, 501, 3)-750.0
-res = float64([135228751 9979252 -115270247; 9979252 10481254 10983256; -115270247 10983256 137236759])
-@test At_mul_B(A, A) == res
-@test A_mul_Bt(A',A') == res
-cutoff = 501
-A = reshape(1:6*cutoff,2*cutoff,3)-(6*cutoff)/2
-Asub = sub(A, 1:2:2*cutoff, 1:3)
-Aref = A[1:2:2*cutoff, 1:3]
-@test At_mul_B(Asub, Asub) == At_mul_B(Aref, Aref)
-Ai = A - im
-Asub = sub(Ai, 1:2:2*cutoff, 1:3)
-Aref = Ai[1:2:2*cutoff, 1:3]
-@test Ac_mul_B(Asub, Asub) == Ac_mul_B(Aref, Aref)
-
-# Matrix exponential
-for elty in (Float32, Float64, Complex64, Complex128)
-        A1  = convert(Matrix{elty}, [4 2 0; 1 4 1; 1 1 4])
-        eA1 = convert(Matrix{elty}, [147.866622446369 127.781085523181  127.781085523182;
-        183.765138646367 183.765138646366  163.679601723179;
-        71.797032399996  91.8825693231832 111.968106246371]')
-        @test_approx_eq expm(A1) eA1
-
-        A2  = convert(Matrix{elty}, 
-            [29.87942128909879    0.7815750847907159 -2.289519314033932;
-            0.7815750847907159 25.72656945571064    8.680737820540137;
-            -2.289519314033932   8.680737820540137  34.39400925519054])
-        eA2 = convert(Matrix{elty},
-            [  5496313853692458.0 -18231880972009236.0 -30475770808580460.0;
-             -18231880972009252.0  60605228702221920.0 101291842930249760.0;
-             -30475770808580480.0 101291842930249728.0 169294411240851968.0])
-        @test_approx_eq expm(A2) eA2
-
-        A3  = convert(Matrix{elty}, [-131 19 18;-390 56 54;-387 57 52])
-        eA3 = convert(Matrix{elty}, [-1.50964415879218 -5.6325707998812  -4.934938326092;
-        0.367879439109187 1.47151775849686  1.10363831732856;
-        0.135335281175235 0.406005843524598 0.541341126763207]')
-        @test_approx_eq expm(A3) eA3
-
-        # issue 5116
-        A4  = [0 10 0 0; -1 0 0 0; 0 0 0 0; -2 0 0 0]
-        eA4 = [-0.999786072879326  -0.065407069689389   0.0   0.0
-                0.006540706968939  -0.999786072879326   0.0   0.0
-                0.0                 0.0                 1.0   0.0
-                0.013081413937878  -3.999572145758650   0.0   1.0]
-        @test_approx_eq expm(A4) eA4
-
-        # issue 5116
-        A5  = [ 0. 0. 0. 0. ; 0. 0. -im 0.; 0. im 0. 0.; 0. 0. 0. 0.]
-        eA5 = [ 1.0+0.0im   0.0+0.0im                 0.0+0.0im                0.0+0.0im
-                0.0+0.0im   1.543080634815244+0.0im   0.0-1.175201193643801im  0.0+0.0im
-                0.0+0.0im   0.0+1.175201193643801im   1.543080634815243+0.0im  0.0+0.0im
-                0.0+0.0im   0.0+0.0im                 0.0+0.0im                1.0+0.0im]
-        @test_approx_eq expm(A5) eA5
-
-        # Hessenberg
-        @test_approx_eq hessfact(A1)[:H] convert(Matrix{elty}, 
-                        [4.000000000000000  -1.414213562373094  -1.414213562373095
-                        -1.414213562373095   4.999999999999996  -0.000000000000000
-                                         0  -0.000000000000002   3.000000000000000])
-end
-
-# Hermitian matrix exponential
-A1 = randn(4,4) + im*randn(4,4)
-A2 = A1 + A1'
-@test_approx_eq expm(A2) expm(Hermitian(A2))
-
-# matmul for types w/o sizeof (issue #1282)
-A = Array(Complex{Int},10,10)
-A[:] = complex(1,1)
-A2 = A^2
-@test A2[1,1] == 20im
 
 # basic tridiagonal operations
 n = 5
@@ -827,6 +466,30 @@ for elty in (Int32, Int64, Float32, Float64, Complex64, Complex128)
     @test_approx_eq gradient(x) g
 end
 
+# Test our own linear algebra functionaly against LAPACK
+for elty in (Float32, Float64, Complex{Float32}, Complex{Float64})
+    for nn in (5,10,15)
+        if elty <: Real
+            A = convert(Matrix{elty}, randn(10,nn))
+        else
+            A = convert(Matrix{elty}, complex(randn(10,nn),randn(10,nn)))
+        end    ## LU (only equal for real because LAPACK uses difference absolute value when choosing permutations)
+        if elty <: Real
+            FJulia  = invoke(lufact!, (AbstractMatrix,), copy(A)) 
+            FLAPACK = Base.LinAlg.LAPACK.getrf!(copy(A))
+            @test_approx_eq FJulia.factors FLAPACK[1]
+            @test_approx_eq FJulia.ipiv FLAPACK[2]
+            @test_approx_eq FJulia.info FLAPACK[3]
+        end
+        
+        ## QR
+        FJulia  = invoke(qrfact!, (AbstractMatrix,), copy(A)) 
+        FLAPACK = Base.LinAlg.LAPACK.geqrf!(copy(A))
+        @test_approx_eq FJulia.factors FLAPACK[1]
+        @test_approx_eq FJulia.τ FLAPACK[2]
+    end
+end
+
 # Test rational matrices
 ## Integrate in general tests when more linear algebra is implemented in julia
 a = convert(Matrix{Rational{BigInt}}, rand(1:10//1,n,n))/n
@@ -847,6 +510,141 @@ Hinv = Rational{BigInt}[(-1)^(i+j)*(i+j-1)*binomial(nHilbert+i-1,nHilbert-j)*bin
 with_bigfloat_precision(2^10) do
     @test norm(float64(inv(float(H)) - float(Hinv))) < 1e-100
 end
+
+# Test balancing in eigenvector calculations
+for elty in (Float32, Float64, Complex64, Complex128)
+    A = convert(Matrix{elty}, [ 3.0     -2.0      -0.9     2*eps(real(one(elty)));
+                               -2.0      4.0       1.0    -eps(real(one(elty)));
+                               -eps(real(one(elty)))/4  eps(real(one(elty)))/2  -1.0     0;
+                               -0.5     -0.5       0.1     1.0])
+    F = eigfact(A,permute=false,scale=false)
+    @test_approx_eq F[:vectors]*Diagonal(F[:values])/F[:vectors] A
+    F = eigfact(A)
+    @test norm(F[:vectors]*Diagonal(F[:values])/F[:vectors] - A) > 0.01
+end
+
+# Tests norms
+nnorm = 1000
+mmat = 100
+nmat = 80
+for elty in (Float16, Float32, Float64, BigFloat, Complex{Float16}, Complex{Float32}, Complex{Float64}, Complex{BigFloat}, Int32, Int64, BigInt)
+    debug && println(elty)
+
+    ## Vector
+    x = ones(elty,10)
+    xs = sub(x,1:2:10)
+    @test_approx_eq norm(x, -Inf) 1
+    @test_approx_eq norm(x, -1) 1/10
+    @test_approx_eq norm(x, 0) 10
+    @test_approx_eq norm(x, 1) 10
+    @test_approx_eq norm(x, 2) sqrt(10)
+    @test_approx_eq norm(x, 3) cbrt(10)
+    @test_approx_eq norm(x, Inf) 1
+    @test_approx_eq norm(xs, -Inf) 1
+    @test_approx_eq norm(xs, -1) 1/5
+    @test_approx_eq norm(xs, 0) 5
+    @test_approx_eq norm(xs, 1) 5
+    @test_approx_eq norm(xs, 2) sqrt(5)
+    @test_approx_eq norm(xs, 3) cbrt(5)
+    @test_approx_eq norm(xs, Inf) 1
+
+    ## Number
+    norm(x[1:1]) === norm(x[1], -Inf)
+    norm(x[1:1]) === norm(x[1], 0)
+    norm(x[1:1]) === norm(x[1], 1)
+    norm(x[1:1]) === norm(x[1], 2)
+    norm(x[1:1]) === norm(x[1], Inf)
+
+    for i = 1:10    
+        x = elty <: Integer ? convert(Vector{elty}, rand(1:10, nnorm)) : 
+            elty <: Complex ? convert(Vector{elty}, complex(randn(nnorm), randn(nnorm))) : 
+            convert(Vector{elty}, randn(nnorm))
+        xs = sub(x,1:2:nnorm)
+        y = elty <: Integer ? convert(Vector{elty}, rand(1:10, nnorm)) : 
+            elty <: Complex ? convert(Vector{elty}, complex(randn(nnorm), randn(nnorm))) : 
+            convert(Vector{elty}, randn(nnorm))        
+        ys = sub(y,1:2:nnorm)
+        α = elty <: Integer ? randn() : 
+            elty <: Complex ? convert(elty, complex(randn(),randn())) : 
+            convert(elty, randn())
+        # Absolute homogeneity
+        @test_approx_eq norm(α*x,-Inf) abs(α)*norm(x,-Inf)
+        @test_approx_eq norm(α*x,-1) abs(α)*norm(x,-1)
+        @test_approx_eq norm(α*x,1) abs(α)*norm(x,1)
+        @test_approx_eq norm(α*x) abs(α)*norm(x) # two is default
+        @test_approx_eq norm(α*x,3) abs(α)*norm(x,3)
+        @test_approx_eq norm(α*x,Inf) abs(α)*norm(x,Inf)
+        
+        @test_approx_eq norm(α*xs,-Inf) abs(α)*norm(xs,-Inf)
+        @test_approx_eq norm(α*xs,-1) abs(α)*norm(xs,-1)
+        @test_approx_eq norm(α*xs,1) abs(α)*norm(xs,1)
+        @test_approx_eq norm(α*xs) abs(α)*norm(xs) # two is default
+        @test_approx_eq norm(α*xs,3) abs(α)*norm(xs,3)
+        @test_approx_eq norm(α*xs,Inf) abs(α)*norm(xs,Inf)
+
+        # Triangle inequality
+        @test norm(x + y,1) <= norm(x,1) + norm(y,1)
+        @test norm(x + y) <= norm(x) + norm(y) # two is default
+        @test norm(x + y,3) <= norm(x,3) + norm(y,3)
+        @test norm(x + y,Inf) <= norm(x,Inf) + norm(y,Inf)
+        
+        @test norm(xs + ys,1) <= norm(xs,1) + norm(ys,1)
+        @test norm(xs + ys) <= norm(xs) + norm(ys) # two is default
+        @test norm(xs + ys,3) <= norm(xs,3) + norm(ys,3)
+        @test norm(xs + ys,Inf) <= norm(xs,Inf) + norm(ys,Inf)
+
+        # Against vectorized versions
+        @test_approx_eq norm(x,-Inf) minimum(abs(x))
+        @test_approx_eq norm(x,-1) inv(sum(1./abs(x)))
+        @test_approx_eq norm(x,0) sum(x .!= 0)
+        @test_approx_eq norm(x,1) sum(abs(x))
+        @test_approx_eq norm(x) sqrt(sum(abs2(x)))
+        @test_approx_eq norm(x,3) cbrt(sum(abs(x).^3.))
+        @test_approx_eq norm(x,Inf) maximum(abs(x))
+    end
+    ## Matrix (Operator)
+        A = ones(elty,10,10)
+        As = sub(A,1:5,1:5)
+        @test_approx_eq norm(A, 1) 10
+        elty <: Union(BigFloat,Complex{BigFloat},BigInt) || @test_approx_eq norm(A, 2) 10
+        @test_approx_eq norm(A, Inf) 10
+        @test_approx_eq norm(As, 1) 5
+        elty <: Union(BigFloat,Complex{BigFloat},BigInt) || @test_approx_eq norm(As, 2) 5
+        @test_approx_eq norm(As, Inf) 5
+
+    for i = 1:10
+        A = elty <: Integer ? convert(Matrix{elty}, rand(1:10, mmat, nmat)) : 
+            elty <: Complex ? convert(Matrix{elty}, complex(randn(mmat, nmat), randn(mmat, nmat))) : 
+            convert(Matrix{elty}, randn(mmat, nmat))
+        As = sub(A,1:nmat,1:nmat)
+        B = elty <: Integer ? convert(Matrix{elty}, rand(1:10, mmat, nmat)) : 
+            elty <: Complex ? convert(Matrix{elty}, complex(randn(mmat, nmat), randn(mmat, nmat))) : 
+            convert(Matrix{elty}, randn(mmat, nmat))        
+        Bs = sub(B,1:nmat,1:nmat)
+        α = elty <: Integer ? randn() :
+            elty <: Complex ? convert(elty, complex(randn(),randn())) : 
+            convert(elty, randn())
+
+        # Absolute homogeneity
+        @test_approx_eq norm(α*A,1) abs(α)*norm(A,1)
+        elty <: Union(BigFloat,Complex{BigFloat},BigInt) || @test_approx_eq norm(α*A) abs(α)*norm(A) # two is default
+        @test_approx_eq norm(α*A,Inf) abs(α)*norm(A,Inf)
+        
+        @test_approx_eq norm(α*As,1) abs(α)*norm(As,1)
+        elty <: Union(BigFloat,Complex{BigFloat},BigInt) || @test_approx_eq norm(α*As) abs(α)*norm(As) # two is default
+        @test_approx_eq norm(α*As,Inf) abs(α)*norm(As,Inf)
+
+        # Triangle inequality
+        @test norm(A + B,1) <= norm(A,1) + norm(B,1)
+        elty <: Union(BigFloat,Complex{BigFloat},BigInt) || @test norm(A + B) <= norm(A) + norm(B) # two is default
+        @test norm(A + B,Inf) <= norm(A,Inf) + norm(B,Inf)
+        
+        @test norm(As + Bs,1) <= norm(As,1) + norm(Bs,1)
+        elty <: Union(BigFloat,Complex{BigFloat},BigInt) || @test norm(As + Bs) <= norm(As) + norm(Bs) # two is default
+        @test norm(As + Bs,Inf) <= norm(As,Inf) + norm(Bs,Inf)
+    end
+end
+
 ## Issue related tests
 # issue 1447
 let
@@ -899,3 +697,5 @@ let
     S[1] = z
     @test S*T == [z z; 0 0]
 end
+
+

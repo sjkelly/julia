@@ -56,6 +56,11 @@ let T = TypeVar(:T,true)
     # issue #5359
     @test typeintersect((Type{Array{T,1}},Array{T,1}),
                         (Type{AbstractVector},Vector{Int})) === None
+    # issue #5559
+    @test typeintersect((Type{Vector{Complex128}}, AbstractVector),
+                        (Type{Array{T,N}}, Array{S,N})) == (Type{Vector{Complex128}},Vector)
+    @test typeintersect((Type{Vector{Complex128}}, AbstractArray),
+                        (Type{Array{T,N}}, Array{S,N})) == (Type{Vector{Complex128}},Vector)
 end
 let N = TypeVar(:N,true)
     @test isequal(typeintersect((NTuple{N,Integer},NTuple{N,Integer}),
@@ -533,15 +538,15 @@ begin
     @test_throws getfield(z, 3)
 
     strct = LoadError("", 0, "")
-    setfield(strct, 2, 8)
+    setfield!(strct, 2, 8)
     @test strct.line == 8
-    setfield(strct, 3, "hi")
+    setfield!(strct, 3, "hi")
     @test strct.error == "hi"
-    setfield(strct, 1, "yo")
+    setfield!(strct, 1, "yo")
     @test strct.file == "yo"
     @test_throws getfield(strct, 10)
-    @test_throws setfield(strct, 0, "")
-    @test_throws setfield(strct, 4, "")
+    @test_throws setfield!(strct, 0, "")
+    @test_throws setfield!(strct, 4, "")
 end
 
 # allow typevar in Union to match as long as the arguments contain
@@ -852,7 +857,7 @@ function i2619()
 end
 i2619()
 @test !bad2619
-@test isa(e2619,ErrorException) && e2619.msg == "f not defined"
+@test isa(e2619,UndefVarError) && e2619.var === :f
 
 # issue #2919
 typealias Foo2919 Int
@@ -1337,3 +1342,16 @@ let
     a = [1.0]
     f5457(pointer(a,1), sin)
 end
+
+# issue #5584
+# this is an intermittent memory bug, but this code is very likely to trigger it
+mapshape_5584{N}(s1::NTuple{N,Int}, s2::NTuple{N,Int}) =
+    (s1 == s2 || error("Argument dimensions are not map-compatible."); s1)
+function f5584()
+    for i = 1:1000000
+        a = rand(1:1000, 3)
+        # the bug was a failure to root these tuples
+        mapshape_5584(tuple(a...), tuple(a...))
+    end
+end
+f5584()

@@ -3,13 +3,8 @@ print_output = isempty(ARGS)
 codespeed = length(ARGS) > 0 && ARGS[1] == "codespeed"
 
 if codespeed
-    try
-        Pkg.init()
-        Pkg.add("JSON")
-        Pkg.add("Curl")
-    end
     using JSON
-    using Curl
+    using HTTPClient.HTTPC
 
     # Ensure that we've got the environment variables we want:
     if !haskey(ENV, "JULIA_FLAVOR")
@@ -19,12 +14,12 @@ if codespeed
     # Setup codespeed data dict for submissions to codespeed's JSON endpoint.  These parameters
     # are constant across all benchmarks, so we'll just let them sit here for now
     csdata = Dict()
-    csdata["commitid"] = Base.BUILD_INFO.commit
+    csdata["commitid"] = Base.GIT_VERSION_INFO.commit
     csdata["project"] = "Julia"
-    csdata["branch"] = Base.BUILD_INFO.branch
+    csdata["branch"] = Base.GIT_VERSION_INFO.branch
     csdata["executable"] = ENV["JULIA_FLAVOR"]
     csdata["environment"] = chomp(readall(`hostname`))
-    csdata["result_date"] = join( split(Base.BUILD_INFO.date_string)[1:2], " " )    #Cut the timezone out
+    csdata["result_date"] = join( split(Base.GIT_VERSION_INFO.date_string)[1:2], " " )    #Cut the timezone out
 end
 
 # Takes in the raw array of values in vals, along with the benchmark name, description, unit and whether less is better
@@ -43,9 +38,9 @@ function submit_to_codespeed(vals,name,desc,unit,test_group,lessisbetter=true)
     csdata["lessisbetter"] = lessisbetter
 
     println( "$name: $(mean(vals))" )
-    ret = Curl.post( "http://$codespeed_host/result/add/json/", {:json => json([csdata])} )
-    if( !ismatch(r".*202 ACCEPTED.*", ret.headers[1][1]) )
-        error("Error submitting $name, dumping headers and text: $(ret.headers[1])\n$(ret.text)\n\n")
+    ret = post( "http://$codespeed_host/result/add/json/", {"json" => json([csdata])} )
+    if ret.http_code != 200 && ret.http_code != 202
+        error("Error submitting $name [HTTP code $(ret.http_code)], dumping headers and text: $(ret.headers)\n$(bytestring(ret.body))\n\n")
         return false
     end
     return true

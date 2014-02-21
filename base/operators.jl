@@ -25,6 +25,7 @@ isequal(x,y) = is(x,y)
 # this definition allows Number types to implement < instead of isless,
 # which is more idiomatic:
 isless(x::Real, y::Real) = x<y
+lexcmp(x::Real, y::Real) = isless(x,y) ? -1 : ifelse(isless(y,x), 1, 0)
 
 ifelse(c::Bool, x, y) = Intrinsics.select_value(c, x, y)
 
@@ -281,8 +282,10 @@ to_index(i)       = i
 to_index(i::Real) = convert(Int, i)
 to_index(i::Int)  = i
 to_index(r::Range1{Int}) = r
-to_index{T}(r::Range1{T}) = to_index(first(r)):to_index(last(r))
+to_index{T<:Real}(r::Range1{T}) = to_index(first(r)):to_index(last(r))
 to_index(I::AbstractArray{Bool,1}) = find(I)
+to_index(I::Range1{Bool}) = find(I)
+to_index{T<:Real}(A::AbstractArray{T}) = int(A)
 to_index(i1, i2)         = to_index(i1), to_index(i2)
 to_index(i1, i2, i3)     = to_index(i1), to_index(i2), to_index(i3)
 to_index(i1, i2, i3, i4) = to_index(i1), to_index(i2), to_index(i3), to_index(i4)

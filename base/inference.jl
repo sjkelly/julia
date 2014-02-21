@@ -245,14 +245,20 @@ t_func[typeassert] =
                        Any))
 
 const tupleref_tfunc = function (A, t, i)
-    if is(t,())
-        return None
+    wrapType = false
+    if isType(t)
+        t = t.parameters[1]
+        wrapType = true
     end
     if isa(t,DataType) && is(t.name,NTuple.name)
-        return t.parameters[2]
+        T = t.parameters[2]
+        return wrapType ? Type{T} : T
     end
     if !isa(t,Tuple)
         return Any
+    end
+    if is(t,())
+        return None
     end
     n = length(t)
     last = tupleref(t,n)
@@ -262,16 +268,16 @@ const tupleref_tfunc = function (A, t, i)
         i = A[2]
         if i > n
             if vararg
-                return last.parameters[1]
+                T = last.parameters[1]
             else
                 return None
             end
         elseif i == n && vararg
-            return last.parameters[1]
+            T = last.parameters[1]
         elseif i <= 0
             return None
         else
-            return tupleref(t,i)
+            T = tupleref(t,i)
         end
     else
         # index unknown, could be anything from the tuple
@@ -280,12 +286,19 @@ const tupleref_tfunc = function (A, t, i)
         else
             types = t
         end
-        return reduce(tmerge, None, types)
+        T = reduce(tmerge, None, types)
+        if wrapType
+            return isleaftype(T) ? Type{T} : Type{TypeVar(:_,T)}
+        else
+            return T
+        end
     end
+    return wrapType ? Type{T} : T
 end
 t_func[tupleref] = (2, 2, tupleref_tfunc)
 
-const getfield_tfunc = function (A, s, name)
+const getfield_tfunc = function (A, s0, name)
+    s = s0
     if isType(s)
         s = typeof(s.parameters[1])
         if s === TypeVar
@@ -307,6 +320,15 @@ const getfield_tfunc = function (A, s, name)
         if s === Module
             return Top
         end
+        if isType(s0)
+            sp = s0.parameters[1]
+            if fld === :parameters && isleaftype(sp.parameters)
+                return Type{sp.parameters}
+            end
+            if fld === :types && isleaftype(sp.types)
+                return Type{sp.types}
+            end
+        end
         for i=1:length(s.names)
             if is(s.names[i],fld)
                 return s.types[i]
@@ -327,7 +349,7 @@ const getfield_tfunc = function (A, s, name)
     end
 end
 t_func[getfield] = (2, 2, getfield_tfunc)
-t_func[setfield] = (3, 3, (o, f, v)->v)
+t_func[setfield!] = (3, 3, (o, f, v)->v)
 const fieldtype_tfunc = function (A, s, name)
     if !isa(s,DataType)
         return Type
@@ -1098,32 +1120,12 @@ function label_counter(body)
     end
     l
 end
-genlabel(sv) = ln(sv.label_counter += 1)
+genlabel(sv) = LabelNode(sv.label_counter += 1)
 
 f_argnames(ast) =
     map(x->(isa(x,Expr) ? x.args[1] : x), ast.args[1]::Array{Any,1})
 
 is_rest_arg(arg::ANY) = (ccall(:jl_is_rest_arg,Int32,(Any,), arg) != 0)
-
-# function typeinf_task(caller)
-#     result = ()
-#     while true
-#         (caller, args) = yieldto(caller, result)
-#         result = typeinf_ext_(args...)
-#     end
-# end
-
-#Inference_Task = Task(typeinf_task, 2097152)
-#yieldto(Inference_Task, current_task())
-
-#function typeinf_ext(linfo, atypes, sparams, cop)
-    #C = current_task()
-    #args = (linfo, atypes, sparams, cop)
-    #if is(C, Inference_Task)
-    #    return typeinf_ext_(args...)
-    #end
-    #return yieldto(Inference_Task, C, args)
-#end
 
 function typeinf_ext(linfo, atypes::ANY, sparams::ANY, def)
     global inference_stack
@@ -1649,7 +1651,7 @@ function resolve_relative(sym, locals, args, from, to, typ, orig)
         end
         m = _basemod()
         if is(from,m) || is(from,Core)
-            return tn(sym)
+            return TopNode(sym)
         end
     end
     return GetfieldNode(from, sym, typ)
@@ -1684,7 +1686,7 @@ function resolve_globals(e::ANY, locals, args, from, to, env1, env2)
         if isa(e2, GetfieldNode)
             throw(e2) # not allowed to set globals in another module
 #            e2 = e2::GetfieldNode
-#            e = Expr(:call, top_setfield, e2.value, qn(e2.name),
+#            e = Expr(:call, top_setfield, e2.value, QuoteNode(e2.name),
 #                resolve_globals(e.args[2], locals, args, from, to, env1, env2))
 #            e.typ = e2.typ
         else
@@ -1894,7 +1896,7 @@ function inlineable(f, e::Expr, atypes, sv, enclosing_ast)
             return NF
         end
         if isa(spvals[i],Symbol)
-            spvals[i] = qn(spvals[i])
+            spvals[i] = QuoteNode(spvals[i])
         end
     end
     (ast, ty) = typeinf(linfo, meth[1], meth[2], linfo)
@@ -2117,16 +2119,11 @@ function inline_worthy(body::Expr)
     return false
 end
 
-tn(sym::Symbol) =
-    ccall(:jl_new_struct, Any, (Any,Any...), TopNode, sym, Any)
-qn(v) = ccall(:jl_new_struct, Any, (Any,Any...), QuoteNode, v)
-ln(v) = ccall(:jl_new_struct, Any, (Any,Any...), LabelNode, v)
-gn(v) = ccall(:jl_new_struct, Any, (Any,Any...), GotoNode, v)
-gn(v::LabelNode) = ccall(:jl_new_struct, Any, (Any,Any...), GotoNode, v.label)
-
-const top_setfield = tn(:setfield)
-const top_tupleref = tn(:tupleref)
-const top_tuple = tn(:tuple)
+gn(v) = GotoNode(v)
+gn(v::LabelNode) = GotoNode(v.label)
+const top_setfield = TopNode(:setfield)
+const top_tupleref = TopNode(:tupleref)
+const top_tuple = TopNode(:tuple)
 
 function mk_tupleref(texpr, i)
     e = :(($top_tupleref)($texpr, $i))
@@ -2211,10 +2208,10 @@ function inlining_pass(e::Expr, sv, ast)
                 if isa(a1,basenumtype) || ((isa(a1,Symbol) || isa(a1,SymbolNode)) &&
                                            exprtype(a1) <: basenumtype)
                     if e.args[3]==2
-                        e.args = {tn(:*), a1, a1}
+                        e.args = {TopNode(:*), a1, a1}
                         f = *
                     elseif e.args[3]==3
-                        e.args = {tn(:*), a1, a1, a1}
+                        e.args = {TopNode(:*), a1, a1, a1}
                         f = *
                     end
                 end
@@ -2222,7 +2219,7 @@ function inlining_pass(e::Expr, sv, ast)
         end
 
         for ninline = 1:100
-            atypes = tuple(map(exprtype, e.args[2:])...)
+            atypes = tuple(map(exprtype, e.args[2:end])...)
             if length(atypes) > MAX_TUPLETYPE_LEN
                 atypes = limit_tuple_type(atypes)
             end

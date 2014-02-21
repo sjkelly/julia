@@ -1,5 +1,6 @@
 #include "platform.h"
 #include "julia.h"
+#include "julia_internal.h"
 
 /*
  * We include <mathimf.h> here, because somewhere below <math.h> is included also.
@@ -29,9 +30,14 @@
 #include "llvm/ExecutionEngine/JITEventListener.h"
 #include "llvm/ExecutionEngine/JITMemoryManager.h"
 #include "llvm/PassManager.h"
-#include "llvm/Analysis/Verifier.h"
 #include "llvm/Analysis/Passes.h"
 #include "llvm/Bitcode/ReaderWriter.h"
+#if defined(LLVM_VERSION_MAJOR) && LLVM_VERSION_MAJOR == 3 && LLVM_VERSION_MINOR >= 5
+#define LLVM35 1
+#include "llvm/IR/Verifier.h"
+#else
+#include "llvm/Analysis/Verifier.h"
+#endif
 #if defined(LLVM_VERSION_MAJOR) && LLVM_VERSION_MAJOR == 3 && LLVM_VERSION_MINOR >= 4
 #define LLVM34 1
 #define USE_MCJIT 1
@@ -78,8 +84,6 @@
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Config/llvm-config.h"
-#include "llvm/Assembly/Parser.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include <setjmp.h>
 
@@ -199,6 +203,7 @@ static Function *jlthrow_func;
 static Function *jlthrow_line_func;
 static Function *jlerror_func;
 static Function *jltypeerror_func;
+static Function *jlundefvarerror_func;
 static Function *jlcheckassign_func;
 static Function *jldeclareconst_func;
 static Function *jltopeval_func;
@@ -353,6 +358,10 @@ static Type *NoopType;
 
 // --- utilities ---
 
+extern "C" {
+    int globalUnique = 0;
+}
+
 #include "cgutils.cpp"
 
 
@@ -405,7 +414,13 @@ static Function *to_function(jl_lambda_info_t *li, bool cstyle)
     assert(f != NULL);
     nested_compile = last_n_c;
     #ifdef DEBUG
+    #ifndef LLVM35
     if (verifyFunction(*f,PrintMessageAction)) {
+    #else
+    llvm::raw_fd_ostream out(1,false);
+    if (verifyFunction(*f,&out))
+    {
+    #endif
         f->dump();
         abort();
     }
@@ -1938,9 +1953,12 @@ static Value *emit_call(jl_value_t **args, size_t arglen, jl_codectx_t *ctx,
                 continue;
             }
             if (at == jl_pvalue_llvmt) {
-                argvals[idx] = boxed(emit_expr(args[i+1], ctx),ctx,expr_type(args[i+1],ctx));
+                Value *origval = emit_expr(args[i+1], ctx);
+                argvals[idx] = boxed(origval,ctx,expr_type(args[i+1],ctx));
                 assert(dyn_cast<UndefValue>(argvals[idx]) == 0);
-                if (might_need_root(args[i+1])) {
+                // TODO: there should be a function emit_rooted that handles this, leaving
+                // the value rooted if it was already, to avoid redundant stores.
+                if (origval->getType() != jl_pvalue_llvmt || might_need_root(args[i+1])) {
                     make_gcroot(argvals[idx], ctx);
                 }
             }
@@ -2052,10 +2070,7 @@ static Value *emit_checked_var(Value *bp, jl_sym_t *name, jl_codectx_t *ctx)
     BasicBlock *ifok = BasicBlock::Create(getGlobalContext(), "ok");
     builder.CreateCondBr(ok, ifok, err);
     builder.SetInsertPoint(err);
-    std::string msg;
-    msg += std::string(name->name);
-    msg += " not defined";
-    just_emit_error(msg, ctx);
+    builder.CreateCall(prepare_call(jlundefvarerror_func), literal_pointer_val((jl_value_t*)name));
     builder.CreateBr(ifok);
     ctx->f->getBasicBlockList().push_back(ifok);
     builder.SetInsertPoint(ifok);
@@ -2785,8 +2800,11 @@ static void finalize_gc_frame(jl_codectx_t *ctx)
 // generate a julia-callable function that calls f (AKA lam)
 static Function *gen_jlcall_wrapper(jl_lambda_info_t *lam, jl_expr_t *ast, Function *f)
 {
+    std::stringstream funcName;
+    funcName << "jlcall_" << f->getName().str();
+
     Function *w = Function::Create(jl_func_sig, Function::ExternalLinkage,
-                                   f->getName(), f->getParent());
+                                   funcName.str(), f->getParent());
     Function::arg_iterator AI = w->arg_begin();
     AI++; //const Argument &fArg = *AI++;
     Value *argArray = AI++;
@@ -2853,8 +2871,6 @@ static Function *gen_jlcall_wrapper(jl_lambda_info_t *lam, jl_expr_t *ast, Funct
 
     return w;
 }
-
-static int globalUnique = 0;
 
 // cstyle = compile with c-callable signature, not jlcall
 static Function *emit_function(jl_lambda_info_t *lam, bool cstyle)
@@ -3630,7 +3646,7 @@ static void init_julia_llvm_env(Module *m)
 #ifdef JL_GC_MARKSWEEP
     jlpgcstack_var =
         new GlobalVariable(*m, jl_ppvalue_llvmt,
-                           true, GlobalVariable::ExternalLinkage,
+                           false, GlobalVariable::ExternalLinkage,
                            NULL, "jl_pgcstack");
     add_named_global(jlpgcstack_var, (void*)&jl_pgcstack);
 #endif
@@ -3709,6 +3725,13 @@ static void init_julia_llvm_env(Module *m)
                          "jl_throw", m);
     jlthrow_func->setDoesNotReturn();
     add_named_global(jlthrow_func, (void*)&jl_throw);
+
+    jlundefvarerror_func =
+        Function::Create(FunctionType::get(T_void, args1_, false),
+                         Function::ExternalLinkage,
+                         "jl_undefined_var_error", m);
+    jlundefvarerror_func->setDoesNotReturn();
+    add_named_global(jlundefvarerror_func, (void*)&jl_undefined_var_error);
 
     std::vector<Type*> args2_throw(0);
     args2_throw.push_back(jl_pvalue_llvmt);
@@ -4042,11 +4065,10 @@ extern "C" void jl_init_codegen(void)
 #endif
 #ifdef USE_MCJIT
     jl_mcjmm = new SectionMemoryManager();
-#else
+#endif
     // Temporarily disable Haswell BMI2 features due to LLVM bug.
     const char *mattr[] = {"-bmi2", "-avx2"};
     std::vector<std::string> attrvec (mattr, mattr+2);
-#endif
     jl_ExecutionEngine = EngineBuilder(engine_module)
         .setEngineKind(EngineKind::JIT)
 #if defined(_OS_WINDOWS_) && defined(_CPU_X86_64_)
@@ -4055,6 +4077,7 @@ extern "C" void jl_init_codegen(void)
         .setTargetOptions(options)
 #ifdef USE_MCJIT
         .setUseMCJIT(true)
+        .setMAttrs(attrvec)
 #else
         .setMAttrs(attrvec)
 #endif
@@ -4120,7 +4143,6 @@ extern "C" void jl_init_codegen(void)
                                          (void*)&restore_arg_area_loc);
 
     typeToTypeId = jl_alloc_cell_1d(16);
-    jl_gc_preserve((jl_value_t*)typeToTypeId);
 }
 
 /*

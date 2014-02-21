@@ -140,7 +140,9 @@ void jl_dump_function_asm(void* Fptr, size_t Fsize,
     }
 
     Streamer.reset(TheTarget->createAsmStreamer(Ctx, stream, /*asmverbose*/true,
+#ifndef LLVM35
                                            /*useLoc*/ true,
+#endif
                                            /*useCFI*/ true,
                                            /*useDwarfDirectory*/ true,
                                            IP, CE, MAB, ShowInst));
@@ -197,7 +199,11 @@ void jl_dump_function_asm(void* Fptr, size_t Fsize,
         // Fall through
 
         case MCDisassembler::Success:
+        #ifdef LLVM35
+            Streamer->EmitInstruction(Inst, *STI);
+        #else
             Streamer->EmitInstruction(Inst);
+        #endif
         break;
         }
     }
