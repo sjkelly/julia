@@ -171,7 +171,7 @@ end
 # on unix
 
 let
-    global fdwatcher_reinit
+    global fdwatcher_reinit, wait
     @unix_only begin
         local fdwatcher_array = Array(FDWatcher,0)
         function fdwatcher_reinit()
