@@ -5,10 +5,14 @@ export @test, @test_fails, @test_throws, @test_approx_eq, @test_approx_eq_eps, @
 abstract Result
 type Success <: Result
     expr
+    resultexpr
 end
+Success(expr) = Success(expr, nothing)
 type Failure <: Result
     expr
+    resultexpr
 end
+Failure(expr) = Failure(expr, nothing)
 type Error <: Result
     expr
     err
@@ -16,8 +20,13 @@ type Error <: Result
 end
 
 default_handler(r::Success) = nothing
-default_handler(r::Failure) = error("test failed: $(r.expr)")
-default_handler(r::Error)   = rethrow(r)
+function default_handler(r::Failure)
+    if r.expr.args[1] != nothing && r.expr.args[3] != nothing
+        error("test failed: $(r.expr) [$(r.resultexpr.args[1]) $(r.resultexpr.args[2]) $(r.resultexpr.args[3])]")
+    end
+    error("test failed: $(r.expr)")
+end
+default_handler(r::Error) = rethrow(r)
 
 handler() = get(task_local_storage(), :TEST_HANDLER, default_handler)
 
@@ -34,7 +43,8 @@ end
 
 function do_test(body,qex)
     handler()(try
-        body() ? Success(qex) : Failure(qex)
+        rex, val = body()
+        val ? Success(qex, rex) : Failure(qex,rex)
     catch err
         Error(qex,err,catch_backtrace())
     end)
@@ -59,7 +69,19 @@ function do_test_throws(body, qex, bt, extype)
 end
 
 macro test(ex)
-    :(do_test(()->($(esc(ex))),$(Expr(:quote,ex))))
+    if typeof(ex) == Expr && ex.head == :comparison && length(ex.args) == 3
+        quote
+            symexpr = $(Expr(:quote,ex))
+            do_test(symexpr)do
+                lhssym = $(esc(ex.args[1]))
+                rhssym = $(esc(ex.args[3]))
+                op = $(esc(ex.args[2]))
+                Expr(:comparison, lhssym, op, rhssym), $(esc(ex.args[2]))(lhssym,rhssym)
+            end
+        end
+    else
+        :(do_test(()->($(Expr(:quote,ex)), $(esc(ex))),$(Expr(:quote,ex))))
+    end
 end
 
 macro test_throws(args...)
