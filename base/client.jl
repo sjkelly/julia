@@ -164,7 +164,7 @@ function run_repl()
                     if eof(STDIN) # if TTY, can throw InterruptException, must be in try/catch block
                         return
                     end
-                    read(STDIN, buf)
+                    read!(STDIN, buf)
                     ccall(:jl_read_buffer,Void,(Ptr{Void},Cssize_t),buf,length(buf))
                 catch ex
                     if isa(ex,InterruptException)
@@ -364,14 +364,17 @@ function load_juliarc()
     try_include(abspath(homedir(),".juliarc.jl"))
 end
 
-
-function _start()
+function early_init()
     Sys.init_sysinfo()
     if CPU_CORES > 8 && !("OPENBLAS_NUM_THREADS" in keys(ENV)) && !("OMP_NUM_THREADS" in keys(ENV))
         # Prevent openblas from stating to many threads, unless/until specifically requested
         ENV["OPENBLAS_NUM_THREADS"] = 8
     end
     start_gc_msgs_task()
+end
+
+function _start()
+    early_init()
 
     try
         any(a->(a=="--worker"), ARGS) || init_head_sched()

@@ -35,6 +35,8 @@
 #if defined(LLVM_VERSION_MAJOR) && LLVM_VERSION_MAJOR == 3 && LLVM_VERSION_MINOR >= 5
 #define LLVM35 1
 #include "llvm/IR/Verifier.h"
+#include "llvm/IR/DIBuilder.h"
+#include "llvm/AsmParser/Parser.h"
 #else
 #include "llvm/Analysis/Verifier.h"
 #endif
@@ -61,8 +63,10 @@
 #include "llvm/Attributes.h"
 #endif
 #if defined(LLVM_VERSION_MAJOR) && LLVM_VERSION_MAJOR == 3 && LLVM_VERSION_MINOR >= 2 
+#ifndef LLVM35
 #include "llvm/DebugInfo.h"
 #include "llvm/DIBuilder.h"
+#endif
 #ifndef LLVM33
 #include "llvm/IRBuilder.h"
 #endif
@@ -115,8 +119,6 @@ void __attribute__(()) __stack_chk_fail()
     //abort();
 }
 }
-
-#define CONDITION_REQUIRES_BOOL
 
 #define DISABLE_FLOAT16
 
@@ -1978,12 +1980,7 @@ static Value *emit_call(jl_value_t **args, size_t arglen, jl_codectx_t *ctx,
         }
         assert(idx == nfargs);
         result = builder.CreateCall(prepare_call(cf), ArrayRef<Value*>(&argvals[0],nfargs));
-        if (result->getType() == T_void) {
-            result = literal_pointer_val((jl_value_t*)jl_nothing);
-        }
-        else {
-            result = mark_julia_type(result, jl_ast_rettype(f->linfo, f->linfo->ast));
-        }
+        result = mark_julia_type(result, jl_ast_rettype(f->linfo, f->linfo->ast));
     }
     else {
         result = emit_jlcall(theFptr, theF, &args[1], nargs, ctx);
@@ -2223,12 +2220,10 @@ static void emit_assignment(jl_value_t *l, jl_value_t *r, jl_codectx_t *ctx)
 static Value *emit_condition(jl_value_t *cond, const std::string &msg, jl_codectx_t *ctx)
 {
     Value *condV = emit_unboxed(cond, ctx);
-#ifdef CONDITION_REQUIRES_BOOL
     if (expr_type(cond, ctx) != (jl_value_t*)jl_bool_type &&
         condV->getType() != T_int1) {
         emit_typecheck(condV, (jl_value_t*)jl_bool_type, msg, ctx);
     }
-#endif
     if (condV->getType() == T_int1) {
         return builder.CreateXor(condV, ConstantInt::get(T_int1,1));
     }
@@ -2589,7 +2584,8 @@ static Value *emit_expr(jl_value_t *expr, jl_codectx_t *ctx, bool isboxed,
         builder.SetInsertPoint(tryblk);
     }
     else if (head == boundscheck_sym) {
-        if (jl_array_len(ex->args) > 0) {
+        if (jl_array_len(ex->args) > 0 &&
+            jl_compileropts.check_bounds == JL_COMPILEROPT_CHECK_BOUNDS_DEFAULT) {
             jl_value_t *arg = args[0];
             if (arg == jl_true) {
                 ctx->boundsCheck.push_back(true);

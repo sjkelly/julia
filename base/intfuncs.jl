@@ -146,7 +146,7 @@ nextpow2(x::Integer) = oftype(x,x < 0 ? -nextpow2(unsigned(-x)) : nextpow2(unsig
 prevpow2(x::Unsigned) = (one(x)>>(x==0)) << ((sizeof(x)<<3)-leading_zeros(x)-1)
 prevpow2(x::Integer) = oftype(x,x < 0 ? -prevpow2(unsigned(-x)) : prevpow2(unsigned(x)))
 
-ispow2(x::Integer) = ((x<=0) == (x&(x-1)))
+ispow2(x::Integer) = count_ones(x)==1
 
 # smallest a^n >= x, with integer n
 function nextpow(a::Real, x::Real)
@@ -290,6 +290,8 @@ for sym in (:bin, :oct, :dec, :hex)
     @eval begin
         ($sym)(x::Unsigned, p::Int) = ($sym)(x,p,false)
         ($sym)(x::Unsigned)         = ($sym)(x,1,false)
+        ($sym)(x::Char, p::Int)     = ($sym)(unsigned(x),p,false)
+        ($sym)(x::Char)             = ($sym)(unsigned(x),1,false)
         ($sym)(x::Integer, p::Int)  = ($sym)(unsigned(abs(x)),p,x<0)
         ($sym)(x::Integer)          = ($sym)(unsigned(abs(x)),1,x<0)
     end

@@ -6,7 +6,7 @@ override CXXFLAGS += $(JCXXFLAGS)
 
 OBJS = hashing.o timefuncs.o ptrhash.o operators.o \
 	utf8.o ios.o htable.o bitvector.o \
-	int2str.o libsupportinit.o arraylist.o
+	int2str.o libsupportinit.o arraylist.o strtod.o
 
 ifeq ($(OS),WINNT)
 OBJS += asprintf.o wcwidth.o
@@ -20,12 +20,6 @@ endif
 endif
 
 DOBJS = $(OBJS:%.o=%.do)
-
-ifneq ($(MAKECMDGOALS),debug)
-XOBJS = $(OBJS)
-else
-XOBJS = $(DOBJS)
-endif
 
 FLAGS = -Wall -Wno-strict-aliasing $(CFLAGS) $(HFILEDIRS:%=-I%) -I$(LIBUV_INC) \
         -fvisibility=hidden -DLIBRARY_EXPORTS
@@ -46,9 +40,14 @@ HEADERS = $(wildcard *.h) $(LIBUV_INC)/uv.h
 %.do: %.S
 	@$(call PRINT_CC, $(CC) $(CPPFLAGS) $(DEBUGFLAGS) -c $< -o $@)
 
-release debug: libsupport.a
+release: libsupport.a
+debug: libsupport-debug.a
 
-libsupport.a: $(XOBJS)
+libsupport.a: $(OBJS)
+	rm -rf $@
+	@$(call PRINT_LINK, $(AR) -rcs $@ $^)
+
+libsupport-debug.a: $(DOBJS)
 	rm -rf $@
 	@$(call PRINT_LINK, $(AR) -rcs $@ $^)
 
@@ -59,3 +58,4 @@ clean:
 	rm -f *~ *#
 	rm -f core*
 	rm -f libsupport.a
+	rm -f libsupport-debug.a
