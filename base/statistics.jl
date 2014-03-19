@@ -61,10 +61,10 @@ function varm(v::AbstractArray, m::Number)
     end
     return varm_pairwise(v, m, 1,n) / (n - 1)
 end
-varm(v::Ranges, m::Number) = var(v)
+varm(v::Range, m::Number) = var(v)
 
 ## variance
-function var(v::Ranges)
+function var(v::Range)
     s = step(v)
     l = length(v)
     if l == 0 || l == 1
@@ -88,7 +88,7 @@ std(v, region) = sqrt(var(v, region))
 ## nice-valued ranges for histograms
 function histrange{T<:FloatingPoint,N}(v::AbstractArray{T,N}, n::Integer)
     if length(v) == 0
-        return Range(0.0,1.0,1)
+        return 0.0:1.0:0.0
     end
     lo, hi = minimum(v), maximum(v)
     if hi == lo
@@ -106,12 +106,12 @@ function histrange{T<:FloatingPoint,N}(v::AbstractArray{T,N}, n::Integer)
         end
     end
     start = step*(ceil(lo/step)-1)
-    Range(start,step,1+iceil((hi - start)/step))
+    start:step:(start + iceil((hi - start)/step))
 end
 
 function histrange{T<:Integer,N}(v::AbstractArray{T,N}, n::Integer)
     if length(v) == 0
-        return Range(0,1,1)
+        return 0:1:0
     end
     lo, hi = minimum(v), maximum(v)
     if hi == lo
@@ -131,11 +131,11 @@ function histrange{T<:Integer,N}(v::AbstractArray{T,N}, n::Integer)
         end
     end
     start = step*(iceil(lo/step)-1)
-    Range(start,step,1+iceil((hi - start)/step))
+    start:step:(start + iceil((hi - start)/step))
 end
 
 ## midpoints of intervals
-midpoints(r::Ranges) = r[1:length(r)-1] + 0.5*step(r)
+midpoints(r::Range) = r[1:length(r)-1] + 0.5*step(r)
 midpoints(v::AbstractVector) = [0.5*(v[i] + v[i+1]) for i in 1:length(v)-1]
 
 ## hist ##
