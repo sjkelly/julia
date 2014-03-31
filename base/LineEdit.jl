@@ -72,7 +72,7 @@ terminal(s::PromptState) = s.terminal
 
 for f in [:terminal,:edit_insert,:on_enter,:add_history,:buffer,:edit_backspace,:(Base.isempty),
         :replace_line,:refreshMultiLine,:input_string,:completeLine,:edit_move_left,:edit_move_right,
-        :update_display_buffer]
+        :edit_move_word_left,:edit_move_word_right,:update_display_buffer]
     @eval ($f)(s::MIState,args...) = $(f)(s.mode_state[s.current_mode],args...)
 end
 
@@ -297,6 +297,13 @@ function edit_move_left(s::PromptState)
     end
 end
 
+function edit_move_word_left(s)
+    if position(s.input_buffer) > 0
+        char_move_word_left(s.input_buffer)
+        refresh_line(s)
+    end
+end
+
 char_move_right(s) = char_move_right(buffer(s))
 function char_move_right(buf::IOBuffer)
     while position(buf) != buf.size
@@ -311,28 +318,50 @@ function char_move_right(buf::IOBuffer)
     end
 end
 
-const non_word_chars = " \t\n\"\\'`@\$><=:;|&{}()[].,+-*/?%^~"
-
-function char_move_word_right(s)
-    while !eof(s.input_buffer) && !in(read(s.input_buffer,Char),non_word_chars)
+function char_move_word_right(buf::IOBuffer)
+    while !eof(buf) && isspace(read(buf,Char))
+    end
+    while !eof(buf)
+        c = peek(buf)
+        if isspace(char(c))
+            break
+        end
+        read(buf,Char)
     end
 end
 
-function char_move_word_left(s)
-    while position(s.input_buffer) > 0
-        char_move_left(s)
-        c = peek(s.input_buffer)
-        if c < 0x80 && in(char(c),non_word_chars)
-            read(s.input_buffer,Uint8)
+function char_move_word_left(buf::IOBuffer)
+    while position(buf) > 0
+        char_move_left(buf)
+        c = peek(buf)
+        if !isspace(char(c))
+            break
+        end
+    end
+    while position(buf) > 0
+        char_move_left(buf)
+        c = peek(buf)
+        if isspace(char(c))
+            read(buf,Uint8)
             break
         end
     end
 end
 
+char_move_word_right(s) = char_move_word_right(buffer(s))
+char_move_word_left(s) = char_move_word_left(buffer(s))
+
 function edit_move_right(s)
     if position(s.input_buffer)!=s.input_buffer.size
         #move to the next UTF8 character to the right
         char_move_right(s)
+        refresh_line(s)
+    end
+end
+
+function edit_move_word_right(s)
+    if position(s.input_buffer)!=s.input_buffer.size
+        char_move_word_right(s)
         refresh_line(s)
     end
 end
@@ -390,11 +419,20 @@ function edit_move_down(s)
     changed
 end
 
+function memmove(dst::IOBuffer, idst::Int, src::IOBuffer, isrc::Int, num::Int)
+    num == 0 && return
+    @assert 0 < num
+    @assert 0 < idst <= length(dst.data) - num + 1
+    @assert 0 < isrc <= length(src.data) - num + 1
+    pdst = pointer(dst.data, idst)
+    psrc = pointer(src.data, isrc)
+    ccall(:memmove, Void, (Ptr{Void},Ptr{Void},Csize_t), pdst, psrc, num)
+end
 
 function edit_replace(s,from,to,str)
     room = length(str.data)-(to-from)
     ensureroom(s.input_buffer, s.input_buffer.size + room)
-    ccall(:memmove, Void, (Ptr{Void},Ptr{Void},Int), pointer(s.input_buffer.data,to+room+1),pointer(s.input_buffer.data,to+1),s.input_buffer.size-to)
+    memmove(s.input_buffer, to+room+1, s.input_buffer, to+1, s.input_buffer.size-to)
     s.input_buffer.size += room
     seek(s.input_buffer,from)
     write(s.input_buffer,str)
@@ -420,8 +458,7 @@ function edit_insert(buf::IOBuffer,c)
         s = string(c)
         ensureroom(buf,buf.size-position(buf)+sizeof(s))
         oldpos = position(buf)
-        ccall(:memmove, Void, (Ptr{Void},Ptr{Void},Int), pointer(buf.data,position(buf)+1+sizeof(s)), pointer(buf.data,position(buf)+1),
-            buf.size-position(buf))
+        memmove(buf, position(buf)+1+sizeof(s), buf, position(buf)+1, buf.size-position(buf))
         buf.size += sizeof(s)
         write(buf,c)
     end
@@ -439,8 +476,7 @@ function edit_backspace(buf::IOBuffer)
     if position(buf) > 0 && buf.size>0
         oldpos = position(buf)
         char_move_left(buf)
-        ccall(:memmove, Void, (Ptr{Void},Ptr{Void},Int), pointer(buf.data,position(buf)+1), pointer(buf.data,oldpos+1),
-            buf.size-oldpos)
+        memmove(buf, position(buf)+1, buf, oldpos+1, buf.size-oldpos)
         buf.size -= oldpos-position(buf)
         return true
     else
@@ -453,14 +489,40 @@ function edit_delete(s)
     if buf.size>0 && position(buf) < buf.size
         oldpos = position(buf)
         char_move_right(s)
-        ccall(:memmove, Void, (Ptr{Void},Ptr{Void},Int), pointer(buf.data,oldpos+1), pointer(buf.data,position(buf)+1),
-            buf.size-position(buf))
+        memmove(buf, oldpos+1, buf, position(buf)+1, buf.size-position(buf))
         buf.size -= position(buf)-oldpos
         seek(buf,oldpos)
         refresh_line(s)
     else
         beep(LineEdit.terminal(s))
     end
+end
+
+function edit_delete_prev_word(buf::IOBuffer)
+    pos1 = position(buf)
+    char_move_word_left(buf)
+    pos0 = position(buf)
+    pos0 < pos1 || return false
+    memmove(buf, pos0+1, buf, pos1+1, buf.size-pos1)
+    buf.size -= pos1 - pos0
+    true
+end
+function edit_delete_prev_word(s)
+    edit_delete_prev_word(buffer(s)) && refresh_line(s)
+end
+
+function edit_delete_next_word(buf::IOBuffer)
+    pos0 = position(buf)
+    char_move_word_right(buf)
+    pos1 = position(buf)
+    pos0 < pos1 || return false
+    seek(buf,pos0)
+    memmove(buf, pos0+1, buf, pos1+1, buf.size-pos1)
+    buf.size -= pos1 - pos0
+    true
+end
+function edit_delete_next_word(s)
+    edit_delete_next_word(buffer(s)) && refresh_line(s)
 end
 
 function replace_line(s::PromptState,l::IOBuffer)
@@ -478,7 +540,6 @@ history_next(::EmptyHistoryProvider) = ("",false)
 history_search(::EmptyHistoryProvider,args...) = false
 add_history(::EmptyHistoryProvider,s) = nothing
 add_history(s::PromptState) = add_history(mode(s).hist,s)
-
 
 function history_prev(s,hist)
     (l,ok) = history_prev(mode(s).hist)
@@ -971,6 +1032,10 @@ const default_keymap =
     2 => edit_move_left,
     # ^F
     6 => edit_move_right,
+    # Meta B
+    "\eb" => edit_move_word_left,
+    # Meta F
+    "\ef" => edit_move_word_right,
     # Meta Enter
     "\e\r" => :(LineEdit.edit_insert(s,'\n')),
     # Simply insert it into the buffer by default
@@ -988,8 +1053,10 @@ const default_keymap =
     "\e[F"  => move_input_end,
     # ^L
     12 => :( Terminals.clear(LineEdit.terminal(s)); LineEdit.refresh_line(s) ),
-    # ^W (#edit_delte_prev_word(s))
-    23 => :( error("Unimplemented") ),
+    # ^W
+    23 => edit_delete_prev_word,
+    # Meta D
+    "\ed" => edit_delete_next_word,
     # ^C
     "^C" => s->begin
         move_input_end(s);
