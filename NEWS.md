@@ -224,6 +224,22 @@ Library improvements
   * New function `widen` for widening numeric types and values, and `widemul`
     for multiplying to a larger type ([#6169])
 
+  * Changes to range types ([#5585])
+
+    * `Range` is now the abstract range type, instead of `Ranges`
+
+    * New function `range` for constructing ranges by length
+
+    * `Range` is now `StepRange`, and `Range1` is now `UnitRange`. Their
+      constructors accept end points instead of lengths. Both are subtypes of a
+      new abstract type `OrdinalRange`.
+
+    * Ranges now support `BigInt` and general ordinal types.
+
+    * Very large ranges (e.g. `0:typemax(Int)`) can now be constructed, but some
+      operations (e.g. `length`) will raise an `OverflowError`.
+
+
 Deprecated or removed
 ---------------------
 
@@ -260,6 +276,8 @@ Deprecated or removed
     `sum!`, `prod!`, `maximum!`, `minimum!`, `all!`, `any!` ([#6197])
 
   * `infs` and `nans` are deprecated in favor of the more general `fill`.
+
+  * `*` and `div` are no longer supported for `Char`.
 
 [#4042]: https://github.com/JuliaLang/julia/issues/4042
 [#5164]: https://github.com/JuliaLang/julia/issues/5164
@@ -335,6 +353,7 @@ Deprecated or removed
 [#6169]: https://github.com/JuliaLang/julia/issues/6169
 [#5970]: https://github.com/JuliaLang/julia/issues/5970
 [#6197]: https://github.com/JuliaLang/julia/pull/6197
+[#5585]: https://github.com/JuliaLang/julia/issues/5585
 
 Julia v0.2.0 Release Notes
 ==========================
