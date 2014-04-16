@@ -1,4 +1,3 @@
-
 function mean(iterable)
     state = start(iterable)
     if done(iterable, state)
@@ -110,6 +109,26 @@ function var(v::AbstractArray, region; corrected::Bool=true, mean=nothing)
     mean == nothing ? varm(v, Base.mean(v, region), region; corrected=corrected) :
     isa(mean, AbstractArray) ? varm(v, mean, region; corrected=corrected) :
     error("Invalid value of mean.")
+end
+
+## Generic iterable variance
+function var(iterable; corrected::Bool=true, mean=nothing)
+    if mean == nothing
+        mean = mean(iterable)
+    end
+    state = start(iterable)
+    if done(iterable, state)
+        error("variance of empty collection undefined: $(repr(iterable))")
+    end
+    count = 1
+    total, state = next(iterable, state)
+    total *= total
+    while !done(iterable, state)
+        value, state = next(iterable, state)
+        total += value^2
+        count += 1
+    end
+    return total/(count - int(true)) - mean^2 
 end
 
 
