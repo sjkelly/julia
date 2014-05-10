@@ -4,7 +4,7 @@ import ..LinAlg: BlasInt, blas_int, ARPACKException
 
 ## aupd and eupd wrappers 
 
-function aupd_wrapper(T, linop::Function, n::Integer,
+function aupd_wrapper(T, linop::Function, linopB::Function, n::Integer,
                       sym::Bool, cmplx::Bool, bmat::ASCIIString,
                       nev::Integer, ncv::Integer, which::ASCIIString, 
                       tol::Real, maxiter::Integer, mode::Integer, v0::Vector)
@@ -47,11 +47,19 @@ function aupd_wrapper(T, linop::Function, n::Integer,
             naupd(ido, bmat, n, which, nev, TOL, resid, ncv, v, n,
                   iparam, ipntr, workd, workl, lworkl, info)
         end
+
+        # Check for warnings and errors
         if info[1] == 3; warn("try eigs/svds with a larger value for ncv"); end
         if info[1] == 1; warn("maximum number of iterations reached; check nconv for number of converged eigenvalues"); end
         if info[1] < 0; throw(ARPACKException(info[1])); end
-        if (ido[1] != -1 && ido[1] != 1); break; end
-        workd[ipntr[2]+zernm1] = linop(getindex(workd, ipntr[1]+zernm1))
+
+        if (ido[1] == -1 || ido[1] == 1)
+            workd[ipntr[2]+zernm1] = linop(getindex(workd, ipntr[1]+zernm1))
+        elseif ido[1] == 2
+            workd[ipntr[2]+zernm1] = linopB(getindex(workd, ipntr[1]+zernm1))
+        else
+            break
+        end
     end
     
     return (resid, v, n, iparam, ipntr, workd, workl, lworkl, rwork, TOL)
