@@ -5,6 +5,18 @@ dir = mktempdir()
 file = joinpath(dir, "afile.txt")
 close(open(file,"w")) # like touch, but lets the operating system update the timestamp for greater precision on some platforms (windows)
 
+@unix_only begin
+    link = joinpath(dir, "afilelink.txt")
+    symlink(file, link)
+end
+
+subdir = joinpath(dir, "adir")
+mkdir(subdir)
+@non_windowsxp_only begin
+    dirlink = joinpath(dir, "dirlink")
+    symlink(subdir, dirlink)
+end
+
 #######################################################################
 # This section tests some of the features of the stat-based file info #
 #######################################################################
@@ -24,13 +36,16 @@ run(`chmod +w $file`)
 @test filesize(file) == 0
 # On windows the filesize of a folder is the accumulation of all the contained
 # files and is thus zero in this case.
-@windows_only begin
-    @test filesize(dir) == 0
-end
-@unix_only begin
-    @test filesize(dir) > 0
-end
+@windows_only @test filesize(dir) == 0
+@unix_only @test filesize(dir) > 0
 @test int(time()) >= int(mtime(file)) >= int(mtime(dir)) >= 0 # 1 second accuracy should be sufficient
+
+# test links
+@unix_only @test islink(link) == true
+@non_windowsxp_only begin
+    @test islink(dirlink) == true
+    @test isdir(dirlink) == true
+end
 
 # rename file
 newfile = joinpath(dir, "bfile.txt")
@@ -178,6 +193,28 @@ b = mmap_bitarray((17,19), s)
 close(s)
 b=nothing; b0=nothing; gc(); gc(); # cause munmap finalizer to run & free resources
 
+# mmap with an offset
+A = rand(1:20, 500, 300)
+fname = tempname()
+s = open(fname, "w+")
+write(s, size(A,1))
+write(s, size(A,2))
+write(s, A)
+close(s)
+s = open(fname)
+m = read(s, Int)
+n = read(s, Int)
+A2 = mmap_array(Int, (m,n), s)
+@test A == A2
+seek(s, 0)
+A3 = mmap_array(Int, (m,n), s, convert(FileOffset,2*sizeof(Int)))
+@test A == A3
+A4 = mmap_array(Int, (m,150), s, convert(FileOffset,(2+150*m)*sizeof(Int)))
+@test A[:, 151:end] == A4
+close(s)
+A2=nothing; A3=nothing; A4=nothing; gc(); gc(); # cause munmap finalizer to run & free resources
+rm(fname)
+
 #######################################################################
 # This section tests temporary file and directory creation.           #
 #######################################################################
@@ -239,7 +276,12 @@ close(f)
 ############
 # Clean up #
 ############
+@unix_only rm(link)
+@non_windowsxp_only rm(dirlink)
+
 rm(file)
+rmdir(subdir)
 rmdir(dir)
+
 @test !ispath(file)
 @test !ispath(dir)

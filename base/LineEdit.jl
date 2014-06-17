@@ -131,6 +131,7 @@ function show_completions(s::PromptState, completions)
     end
 end
 
+# Prompt Completions
 function complete_line(s::PromptState)
     completions, partial, should_complete = complete_line(s.p.complete, s)
     if length(completions) == 0
@@ -182,7 +183,7 @@ prompt_string(s::String) = s
 refresh_multi_line(termbuf::TerminalBuffer, s::PromptState) = s.ias =
     refresh_multi_line(termbuf, terminal(s), buffer(s), s.ias, s, indent = s.indent)
 
-function refresh_multi_line(termbuf::TerminalBuffer, terminal::TTYTerminal, buf, state::InputAreaState, prompt = ""; indent = 0)
+function refresh_multi_line(termbuf::TerminalBuffer, terminal::UnixTerminal, buf, state::InputAreaState, prompt = ""; indent = 0)
     cols = width(terminal)
 
     _clear_input_area(termbuf, state)
@@ -203,7 +204,7 @@ function refresh_multi_line(termbuf::TerminalBuffer, terminal::TTYTerminal, buf,
 
     l = ""
 
-    plength = length(prompt)
+    plength = strwidth(prompt)
     pslength = length(prompt.data)
     # Now go through the buffer line by line
     while cur_row == 0 || (!isempty(l) && l[end] == '\n')
@@ -211,11 +212,11 @@ function refresh_multi_line(termbuf::TerminalBuffer, terminal::TTYTerminal, buf,
         hasnl = !isempty(l) && l[end] == '\n'
         cur_row += 1
         # We need to deal with UTF8 characters. Since the IOBuffer is a bytearray, we just count bytes
-        llength = length(l)
+        llength = strwidth(l)
         slength = length(l.data)
         if cur_row == 1 # First line
             if line_pos < slength
-                num_chars = length(l[1:line_pos])
+                num_chars = strwidth(l[1:line_pos])
                 curs_row = div(plength+num_chars-1, cols) + 1
                 curs_pos = (plength+num_chars-1) % cols + 1
             end
@@ -229,7 +230,7 @@ function refresh_multi_line(termbuf::TerminalBuffer, terminal::TTYTerminal, buf,
             # the '\n' at the end of the previous line)
             if curs_row == -1
                 if line_pos < slength
-                    num_chars = length(l[1:line_pos])
+                    num_chars = strwidth(l[1:line_pos])
                     curs_row = cur_row + div(indent+num_chars-1, cols)
                     curs_pos = (indent+num_chars-1) % cols + 1
                 end
@@ -310,13 +311,20 @@ function char_move_left(buf::IOBuffer)
     c
 end
 
-function edit_move_left(s::PromptState)
-    if position(s.input_buffer) > 0
-        #move to the next UTF8 character to the left
-        char_move_left(s.input_buffer)
-        refresh_line(s)
+function edit_move_left(buf::IOBuffer)
+    if position(buf) > 0
+        #move to the next base UTF8 character to the left
+        while true
+            c = char_move_left(buf)
+            if charwidth(c) != 0 || c == '\n' || position(buf) == 0
+                break
+            end
+        end
+        return true
     end
+    return false
 end
+edit_move_left(s::PromptState) = edit_move_left(s.input_buffer) && refresh_line(s)
 
 function edit_move_word_left(s)
     if position(s.input_buffer) > 0
@@ -357,13 +365,22 @@ end
 char_move_word_right(s) = char_move_word_right(buffer(s))
 char_move_word_left(s) = char_move_word_left(buffer(s))
 
-function edit_move_right(s)
-    if !eof(s.input_buffer)
-        # move to the next UTF8 character to the right
-        char_move_right(s)
-        refresh_line(s)
+function edit_move_right(buf::IOBuffer)
+    if !eof(buf)
+        # move to the next base UTF8 character to the right
+        while true
+            c = char_move_right(buf)
+            eof(buf) && break
+            pos = position(buf)
+            nextc = read(buf,Char)
+            seek(buf,pos)
+            (charwidth(nextc) != 0 || nextc == '\n') && break
+        end
+        return true
     end
+    return false
 end
+edit_move_right(s::PromptState) = edit_move_right(s.input_buffer) && refresh_line(s)
 
 function edit_move_word_right(s)
     if !eof(s.input_buffer)
@@ -899,7 +916,7 @@ function refresh_multi_line(s::Union(SearchState,PromptState))
     refresh_multi_line(terminal(s), s)
 end
 
-function refresh_multi_line(terminal::TTYTerminal, args...; kwargs...)
+function refresh_multi_line(terminal::UnixTerminal, args...; kwargs...)
     outbuf = IOBuffer()
     termbuf = TerminalBuffer(outbuf)
     ret = refresh_multi_line(termbuf, terminal, args...;kwargs...)
@@ -923,8 +940,9 @@ end
 
 type HistoryPrompt <: TextInterface
     hp::HistoryProvider
+    complete
     keymap_func::Function
-    HistoryPrompt(hp) = new(hp)
+    HistoryPrompt(hp) = new(hp, EmptyCompletionProvider())
 end
 
 init_state(terminal, p::HistoryPrompt) = SearchState(terminal, p, true, IOBuffer(), IOBuffer())
@@ -934,6 +952,17 @@ state(s::PromptState, p) = (@assert s.p == p; s)
 mode(s::MIState) = s.current_mode
 mode(s::PromptState) = s.p
 mode(s::SearchState) = @assert false
+
+# Search Mode completions
+function complete_line(s::SearchState)
+    completions, partial, should_complete = complete_line(s.histprompt.complete, s)
+    # For now only allow exact completions in search mode
+    if length(completions) == 1
+        prev_pos = position(s.query_buffer)
+        seek(s.query_buffer, prev_pos-sizeof(partial))
+        edit_replace(s, position(s.query_buffer), prev_pos, completions[1])
+    end
+end
 
 function accept_result(s, p)
     parent = state(s, p).parent
@@ -970,7 +999,8 @@ function setup_search_keymap(hp)
         "^S"      => :(LineEdit.history_set_backward(data, false); LineEdit.history_next_result(s, data)),
         '\r'      => s->accept_result(s, p),
         '\n'      => '\r',
-        '\t'      => nothing, #TODO: Maybe allow tab completion in R-Search?
+        # Limited form of tab completions
+        '\t'      => :(LineEdit.complete_line(s); LineEdit.update_display_buffer(s, data)),
         "^L"      => :(Terminals.clear(LineEdit.terminal(s)); LineEdit.update_display_buffer(s, data)),
 
         # Backspace/^H
@@ -1033,6 +1063,12 @@ function setup_search_keymap(hp)
         # Use ^N and ^P to change search directions and iterate through results
         "^N"      => :(LineEdit.history_set_backward(data, false); LineEdit.history_next_result(s, data)),
         "^P"      => :(LineEdit.history_set_backward(data, true); LineEdit.history_next_result(s, data)),
+        # Bracketed paste mode
+        "\e[200~" => quote
+            ps = LineEdit.state(s, LineEdit.mode(s))
+            input = readuntil(ps.terminal, "\e[201~")[1:(end-6)]
+            LineEdit.edit_insert(data.query_buffer, input); LineEdit.update_display_buffer(s, data)
+        end,
         "*"       => :(LineEdit.edit_insert(data.query_buffer, c1); LineEdit.update_display_buffer(s, data))
     }
     p.keymap_func = @eval @LineEdit.keymap $([pkeymap, escape_defaults])

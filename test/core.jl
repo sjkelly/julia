@@ -102,6 +102,13 @@ end
 @test typeintersect(Type{(Int...)}, Type{(Bool...)}) === None
 @test typeintersect((Bool,Int...), (Bool...)) === (Bool,)
 
+let T = TypeVar(:T,Union(Float32,Float64))
+    @test typeintersect(AbstractArray, Matrix{T}) == Matrix{T}
+end
+let T = TypeVar(:T,Union(Float32,Float64),true)
+    @test typeintersect(AbstractArray, Matrix{T}) == Matrix{T}
+end
+
 @test isa(Int,Type{TypeVar(:T,Number)})
 @test !isa(DataType,Type{TypeVar(:T,Number)})
 @test DataType <: Type{TypeVar(:T,Type)}
@@ -346,6 +353,12 @@ glotest()
 @test glob_x == 88
 @test loc_x == 10
 
+# issue #7272
+@test expand(parse("let
+              global x = 2
+              local x = 1
+              end")) == Expr(:error, "variable \"x\" declared both local and global")
+
 # let - new variables, including undefinedness
 function let_undef()
     first = true
@@ -382,8 +395,17 @@ end
 @test a[2](10) == 12
 @test a[3](10) == 13
 
-# syntax
+# ? syntax
 @test (true ? 1 : false ? 2 : 3) == 1
+
+# issue #7252
+begin
+    local a
+    1 > 0 ? a=2 : a=3
+    @test a == 2
+    1 < 0 ? a=2 : a=3
+    @test a == 3
+end
 
 # tricky space sensitive syntax cases
 @test [-1 ~1] == [(-1) (~1)]

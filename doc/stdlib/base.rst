@@ -3147,6 +3147,10 @@ Mathematical Functions
 
    Airy function derivative :math:`\operatorname{Bi}'(x)`.
 
+.. function:: airyx(k,x)
+
+   scaled kth derivative of the Airy function, return :math:`\operatorname{Ai}(x) e^{\frac{2}{3} x \sqrt{x}}` for ``k == 0 || k == 1``, and :math:`\operatorname{Ai}(x) e^{- \left| \operatorname{Re} \left( \frac{2}{3} x \sqrt{x} \right) \right|}` for ``k == 2 || k == 3``.
+
 .. function:: besselj0(x)
 
    Bessel function of the first kind of order 0, :math:`J_0(x)`.
@@ -3158,6 +3162,10 @@ Mathematical Functions
 .. function:: besselj(nu, x)
 
    Bessel function of the first kind of order ``nu``, :math:`J_\nu(x)`.
+
+.. function:: besseljx(nu, x)
+
+   Scaled Bessel function of the first kind of order ``nu``, :math:`J_\nu(x) e^{- | \operatorname{Im}(x) |}`.
 
 .. function:: bessely0(x)
 
@@ -3171,13 +3179,25 @@ Mathematical Functions
 
    Bessel function of the second kind of order ``nu``, :math:`Y_\nu(x)`.
 
+.. function:: besselyx(nu, x)
+
+   Scaled Bessel function of the second kind of order ``nu``, :math:`Y_\nu(x) e^{- | \operatorname{Im}(x) |}`.
+
 .. function:: hankelh1(nu, x)
 
    Bessel function of the third kind of order ``nu``, :math:`H^{(1)}_\nu(x)`.
 
+.. function:: hankelh1x(nu, x)
+
+   Scaled Bessel function of the third kind of order ``nu``, :math:`H^{(1)}_\nu(x) e^{-x i}`.
+
 .. function:: hankelh2(nu, x)
 
    Bessel function of the third kind of order ``nu``, :math:`H^{(2)}_\nu(x)`.
+
+.. function:: hankelh2x(nu, x)
+
+   Scaled Bessel function of the third kind of order ``nu``, :math:`H^{(2)}_\nu(x) e^{x i}`.
 
 .. function:: besselh(nu, k, x)
 
@@ -3188,9 +3208,17 @@ Mathematical Functions
 
    Modified Bessel function of the first kind of order ``nu``, :math:`I_\nu(x)`.
 
+.. function:: besselix(nu, x)
+
+   Scaled modified Bessel function of the first kind of order ``nu``, :math:`I_\nu(x) e^{- | \operatorname{Re}(x) |}`.
+
 .. function:: besselk(nu, x)
 
    Modified Bessel function of the second kind of order ``nu``, :math:`K_\nu(x)`.
+
+.. function:: besselk(nu, x)
+
+   Scaled modified Bessel function of the second kind of order ``nu``, :math:`K_\nu(x) e^x`.
 
 .. function:: beta(x, y)
 
@@ -3220,6 +3248,14 @@ Mathematical Functions
 .. function:: widemul(x, y)
 
    Multiply ``x`` and ``y``, giving the result as a larger type.
+
+.. function:: @evalpoly(z, c...)
+
+   Evaluate the polynomial :math:`\sum_k c[k] z^{k-1}` for the
+   coefficients ``c[1]``, ``c[2]``, ...; that is, the coefficients are
+   given in ascending order by power of ``z``.  This macro expands to
+   efficient inline code that uses either Horner's method or, for
+   complex ``z``, a more efficient Goertzel-like algorithm.
 
 Data Formats
 ------------

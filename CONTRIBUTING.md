@@ -6,7 +6,7 @@ Hi! Thanks for checking out Julia. If you have questions or problems, the [Julia
 
 * Create a [GitHub account](https://github.com/signup/free).
 
-* [Fork Julia](https://github.com/JuliaLang/julia/fork_select).
+* [Fork Julia](https://github.com/JuliaLang/julia/fork).
 
 * Build the software and libraries (the first time takes a while, but it's fast after that). Detailed build instructions are in the [README](https://github.com/JuliaLang/julia/tree/master/README.md). Julia depends on several external packages; most are automatically downloaded and installed, but are less frequently updated than Julia itself.
 
@@ -23,8 +23,8 @@ A useful bug report filed as a Github issue provides information about how to re
 1. Before opening a new [Github issue](https://github.com/JuliaLang/julia/issues):
   - Try searching the existing issues or the [`julia-users` mailing list](https://groups.google.com/forum/#!forum/julia-users) to see if someone else has already noticed the same problem.
   - Try some simple debugging techniques to help isolate the problem.
-    - Try running the code with the debug REPL. If you have a source distribution of Julia, you can build your own debug REPL with `make debug`, which produces the `usr/bin/julia-debug-basic` REPL.
-    - Consider running the debug REPL in a debugger such as `gdb` or `lldb`. Obtaining even a simple [backtrace](http://www.unknownroad.com/rtfm/gdbtut/gdbsegfault.html) is very useful.
+    - Try running the code with the debug build of Julia with `make debug`, which produces the `usr/bin/julia-debug`.
+    - Consider running `julia-debug` with a debugger such as `gdb` or `lldb`. Obtaining even a simple [backtrace](http://www.unknownroad.com/rtfm/gdbtut/gdbsegfault.html) is very useful.
     - If Julia segfaults, try following [these debugging tips](https://gist.github.com/staticfloat/6188418#segfaults-during-bootstrap-sysimgjl) to help track down the specific origin of the bug.
 
 2. If the problem is caused by a Julia package rather than core Julia, file a bug report with the relevant package author rather than here.

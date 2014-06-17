@@ -73,6 +73,11 @@ $(build_private_libdir)/sys%$(SHLIB_EXT): $(build_private_libdir)/sys%o
 	$(CXX) -shared -fPIC -L$(build_private_libdir) -L$(build_libdir) -L$(build_shlibdir) -o $@ $< \
 		$$([ $(OS) = Darwin ] && echo -Wl,-undefined,dynamic_lookup || echo -Wl,--unresolved-symbols,ignore-all ) \
 		$$([ $(OS) = WINNT ] && echo -ljulia -lssp)
+ifeq ($(OS), Darwin)
+ifeq ($(shell test `dsymutil -v | cut -d\- -f2 | cut -d. -f1` -gt 102 && echo yes), yes)
+	dsymutil $@
+endif
+endif
 
 $(build_private_libdir)/sys0.o:
 	@$(QUIET_JULIA) cd base && \
@@ -270,7 +275,7 @@ ifeq ($(OS), WINNT)
 	    mkdir $(DESTDIR)$(prefix)/Git && \
 	    7z x PortableGit.7z -o"$(DESTDIR)$(prefix)/Git" )
 	cd $(DESTDIR)$(bindir) && rm -f llvm* llc.exe lli.exe opt.exe LTO.dll bugpoint.exe macho-dump.exe
-	$(call spawn,./dist-extras/nsis/makensis.exe) /NOCD /DVersion=$(JULIA_VERSION) /DArch=$(ARCH) /DCommit=$(JULIA_COMMIT) ./contrib/windows/build-installer.nsi
+	$(call spawn,./dist-extras/nsis/makensis.exe) -NOCD -DVersion=$(JULIA_VERSION) -DArch=$(ARCH) -DCommit=$(JULIA_COMMIT) ./contrib/windows/build-installer.nsi
 	./dist-extras/7z a -mx9 "julia-install-$(JULIA_COMMIT)-$(ARCH).7z" julia-installer.exe
 	cat ./contrib/windows/7zS.sfx ./contrib/windows/7zSFX-config.txt "julia-install-$(JULIA_COMMIT)-$(ARCH).7z" > "julia-${JULIA_VERSION}-${ARCH}.exe"
 	-rm -f julia-installer.exe

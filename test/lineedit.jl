@@ -45,6 +45,27 @@ run_test(test3_func,IOBuffer("aab"))
 @test a_bar == 2
 @test b_bar == 1
 
+## edit_move{left,right} ##
+buf = IOBuffer("a\na\na\n")
+seek(buf, 0)
+for i = 1:6
+    LineEdit.edit_move_right(buf)
+    @test position(buf) == i
+end
+@test eof(buf)
+for i = 5:0
+    LineEdit.edit_move_left(buf)
+    @test position(buf) == i
+end
+
+# skip unicode combining characters
+buf = IOBuffer("ŷ")
+seek(buf, 0)
+LineEdit.edit_move_right(buf)
+@test eof(buf)
+LineEdit.edit_move_left(buf)
+@test position(buf) == 0
+
 ## edit_move_{up,down} ##
 
 buf = IOBuffer("type X\n    a::Int\nend")
@@ -115,6 +136,17 @@ LineEdit.char_move_word_left(buf)
 @test bytestring(buf.data[1:buf.size]) == "x = func(arg3)"
 @test LineEdit.edit_delete_prev_word(buf)
 @test bytestring(buf.data[1:buf.size]) == "x = arg3)"
+
+# Unicode combining characters
+let buf = IOBuffer()
+    LineEdit.edit_insert(buf, "â")
+    LineEdit.edit_move_left(buf)
+    @test position(buf) == 0
+    LineEdit.edit_move_right(buf)
+    @test nb_available(buf) == 0
+    LineEdit.edit_backspace(buf)
+    @test bytestring(buf.data[1:buf.size]) == "a"
+end
 
 ## edit_transpose ##
 let buf = IOBuffer()

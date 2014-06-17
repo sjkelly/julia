@@ -26,8 +26,9 @@ end
 
 # Vector multiplication
 A_mul_B!{T<:BlasFloat,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}, b::StridedVector{T}) = BLAS.trmv!(UpLo == :L ? 'L' : 'U', 'N', IsUnit ? 'U' : 'N', A.data, b)
+Ac_mul_B!{T<:BlasReal,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}, b::StridedVector{T}) = BLAS.trmv!(UpLo == :L ? 'L' : 'U', 'T', IsUnit ? 'U' : 'N', A.data, b)
 Ac_mul_B!{T<:BlasComplex,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}, b::StridedVector{T}) = BLAS.trmv!(UpLo == :L ? 'L' : 'U', 'C', IsUnit ? 'U' : 'N', A.data, b)
-At_mul_B!{T<:BlasReal,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}, b::StridedVector{T}) = BLAS.trmv!(UpLo == :L ? 'L' : 'U', 'T', IsUnit ? 'U' : 'N', A.data, b)
+At_mul_B!{T<:BlasFloat,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}, b::StridedVector{T}) = BLAS.trmv!(UpLo == :L ? 'L' : 'U', 'T', IsUnit ? 'U' : 'N', A.data, b)
 
 # Matrix multiplication
 A_mul_B!{T<:BlasFloat,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}, B::StridedMatrix{T}) = BLAS.trmm!('L', UpLo == :L ? 'L' : 'U', 'N', IsUnit ? 'U' : 'N', one(T), A.data, B)
@@ -93,8 +94,8 @@ function convert{T,TA,S,UpLo,IsUnit}(::Type{AbstractMatrix{T}}, A::Triangular{TA
     M = convert(AbstractMatrix{T}, A.data)
     Triangular{T,typeof(M),UpLo,IsUnit}(M)
 end
-function convert{T,S,UpLo,IsUnit}(::Type{Matrix}, A::Triangular{T,S,UpLo,IsUnit})
-    B = Array(T, size(A, 1), size(A, 1))
+function convert{Tret,T,S,UpLo,IsUnit}(::Type{Matrix{Tret}}, A::Triangular{T,S,UpLo,IsUnit})
+    B = Array(Tret, size(A, 1), size(A, 1))
     copy!(B, A.data)
     (UpLo == :L ? tril! : triu!)(B)
     if IsUnit
@@ -104,8 +105,9 @@ function convert{T,S,UpLo,IsUnit}(::Type{Matrix}, A::Triangular{T,S,UpLo,IsUnit}
     end
     B
 end
+convert{T,S,UpLo,IsUnit}(::Type{Matrix}, A::Triangular{T,S,UpLo,IsUnit}) = convert(Matrix{T}, A)
 
-function full!(A::Triangular)
+function full!{T,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit})
     B = A.data
     (UpLo == :L ? tril! : triu!)(B)
     if IsUnit
@@ -126,7 +128,10 @@ function similar{T,S,UpLo,IsUnit,Tnew}(A::Triangular{T,S,UpLo,IsUnit}, ::Type{Tn
     return Triangular{Tnew, typeof(A), UpLo, IsUnit}(A)
 end
 
-getindex{T,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}, i::Integer, j::Integer) = i == j ? (IsUnit ? one(T) : A.data[i,j]) : ((UpLo == :U) == (i < j) ? getindex(A.data, i, j) : zero(T))
+getindex{T,S}(A::Triangular{T,S,:L,true}, i::Integer, j::Integer) = i == j ? one(T) : (i > j ? A.data[i,j] : zero(T))
+getindex{T,S}(A::Triangular{T,S,:L,false}, i::Integer, j::Integer) = i >= j ? A.data[i,j] : zero(T)
+getindex{T,S}(A::Triangular{T,S,:U,true}, i::Integer, j::Integer) = i == j ? one(T) : (i < j ? A.data[i,j] : zero(T))
+getindex{T,S}(A::Triangular{T,S,:U,false}, i::Integer, j::Integer) = i <= j ? A.data[i,j] : zero(T)
 getindex{T,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}, i::Integer) = ((m, n) = divrem(i - 1, size(A,1)); A[m + 1, n + 1])
 
 istril{T,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}) = UpLo == :L
@@ -163,8 +168,11 @@ end
 
 A_mul_B!{T,S,UpLo,IsUnit}(A::Triangular{T,S,UpLo,IsUnit}, B::Triangular{T,S,UpLo,IsUnit}) = Triangular{T,S,UpLo,IsUnit}(A*full!(B))
 A_mul_B!(A::Tridiagonal, B::Triangular) = A*full!(B)
+A_mul_B!(C::AbstractVecOrMat, A::Triangular, B::AbstractVecOrMat) = A_mul_B!(A, copy!(C, B))
+
 A_mul_Bc!(A::Triangular, B::QRCompactWYQ) = A_mul_Bc!(full!(A),B)
 A_mul_Bc!(A::Triangular, B::QRPackedQ) = A_mul_Bc!(full!(A),B)
+A_mul_Bc!(C::AbstractVecOrMat, A::Triangular, B::AbstractVecOrMat) = A_mul_Bc!(A, copy!(C, B))
 
 #Generic multiplication
 *(A::Tridiagonal, B::Triangular) = A_mul_B!(full(A), B)
