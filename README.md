@@ -15,18 +15,16 @@ This is my fork of Julia and branch for notetaking. I make it default on GitHub 
 
 ## Things to document
 * https://github.com/JuliaLang/julia/issues/5432
+* args to make
 
 ## Issues I want to fix
 * https://github.com/JuliaLang/julia/issues/4908
 
 ### More detailed tests
-I think the macro in Base.test can 
-* https://github.com/JuliaLang/julia/pull/6106
-
+Started in:
+* https://github.com/JuliaLang/julia/pull/7586
 
 ## Ideas for Base
-These are ideas and improvements I might develop as packages outside julia source so I can test quickly.
-
 Expand graphics.jl and cross-pollinate the function and type names with PolygonClipping.jl and MeshSlicer.jl.
 
 An easy way to install programs from Pkg.
