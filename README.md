@@ -25,7 +25,7 @@ Started in:
 * https://github.com/JuliaLang/julia/pull/7586
 
 ## Ideas for Base
-Expand graphics.jl and cross-pollinate the function and type names with PolygonClipping.jl and MeshSlicer.jl.
+Expand graphics.jl and cross-pollinate the function and type names with PolygonClipping.jl and MeshSlicer.jl. Also, https://github.com/mroughan/Geometry2D.jl/issues/1. We can define promote rules for interoperability.
 
 An easy way to install programs from Pkg.
 
