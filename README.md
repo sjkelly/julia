@@ -16,6 +16,12 @@ This is my fork of Julia and branch for notetaking. I make it default on GitHub 
 ## Things to document
 * https://github.com/JuliaLang/julia/issues/5432
 * args to make
+* https://github.com/JuliaLang/julia/issues/5135
+* https://github.com/JuliaLang/julia/issues/5862
+* https://github.com/JuliaLang/julia/issues/5523
+* https://github.com/JuliaLang/julia/issues/7437
+* https://github.com/JuliaLang/julia/issues/2501
+
 
 ## Issues I want to fix
 * https://github.com/JuliaLang/julia/issues/4908
