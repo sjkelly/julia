@@ -142,7 +142,7 @@ writetag(s::IO, tag) = (write(s, UInt8(tag)); nothing)
 
 function write_as_tag(s::IO, tag)
     tag < VALUE_TAGS && write(s, UInt8(0))
-    write(s, UInt8(tag))
+    write(s, Base.unsafe_trunc(UInt8, tag))
     nothing
 end
 
@@ -152,7 +152,7 @@ function serialize_cycle(s::AbstractSerializer, @nospecialize(x))
     if offs != -1
         if offs <= typemax(UInt16)
             writetag(s.io, SHORTBACKREF_TAG)
-            write(s.io, UInt16(offs))
+            write(s.io, Base.unsafe_trunc(UInt16, offs))
         elseif offs <= typemax(Int32)
             writetag(s.io, BACKREF_TAG)
             write(s.io, Int32(offs))
@@ -191,10 +191,10 @@ function serialize(s::AbstractSerializer, t::Tuple)
     l = length(t)
     if l <= 255
         writetag(s.io, TUPLE_TAG)
-        write(s.io, UInt8(l))
+        write(s.io, Base.unsafe_trunc(UInt8, l))
     else
         writetag(s.io, LONGTUPLE_TAG)
-        write(s.io, Int32(l))
+        write(s.io, Base.unsafe_trunc(UInt32, l))
     end
     for x in t
         serialize(s, x)
@@ -221,10 +221,10 @@ function serialize(s::AbstractSerializer, x::Symbol)
     end
     if len <= 255
         writetag(s.io, SYMBOL_TAG)
-        write(s.io, UInt8(len))
+        write(s.io, Base.unsafe_trunc(UInt8, len))
     else
         writetag(s.io, LONGSYMBOL_TAG)
-        write(s.io, Int32(len))
+        write(s.io, Base.unsafe_trunc(Int32, len))
     end
     unsafe_write(s.io, pname, len)
     nothing
@@ -238,14 +238,14 @@ function serialize_array_data(s::IO, a)
         count = 1
         for i = 2:length(a)
             if a[i] != last || count == 127
-                write(s, UInt8((UInt8(last) << 7) | count))
+                write(s, Base.unsafe_trunc(UInt8, (Base.bitcast(UInt8, last) << 0x07) | count))
                 last = a[i]
                 count = 1
             else
                 count += 1
             end
         end
-        write(s, UInt8((UInt8(last) << 7) | count))
+        write(s, Base.unsafe_trunc(UInt8, (Base.bitcast(UInt8, last) << 0x07) | count))
     else
         write(s, a)
     end
@@ -292,7 +292,7 @@ function serialize(s::AbstractSerializer, ss::String)
     end
     if len <= 255
         writetag(s.io, STRING_TAG)
-        write(s.io, UInt8(len))
+        write(s.io, Base.unsafe_trunc(UInt8, len))
     else
         writetag(s.io, LONGSTRING_TAG)
         write(s.io, Int64(len))
@@ -324,7 +324,7 @@ function serialize(s::AbstractSerializer, ex::Expr)
     l = length(ex.args)
     if l <= 255
         writetag(s.io, EXPR_TAG)
-        write(s.io, UInt8(l))
+        write(s.io, Base.unsafe_trunc(UInt8, l))
     else
         writetag(s.io, LONGEXPR_TAG)
         write(s.io, Int32(l))
@@ -575,8 +575,8 @@ function serialize_type(s::AbstractSerializer, @nospecialize(t::DataType), ref::
 end
 
 function serialize(s::AbstractSerializer, n::Int32)
-    if 0 <= n <= (n_int_literals-1)
-        write(s.io, UInt8(ZERO32_TAG+n))
+    if 0 <= n <= (n_int_literals-1) # <= 32
+        write(s.io, Base.unsafe_trunc(UInt8, ZERO32_TAG+n))
     else
         writetag(s.io, INT32_TAG)
         write(s.io, n)
@@ -586,7 +586,7 @@ end
 
 function serialize(s::AbstractSerializer, n::Int64)
     if 0 <= n <= (n_int_literals-1)
-        write(s.io, UInt8(ZERO64_TAG+n))
+        write(s.io, Base.unsafe_trunc(UInt8, ZERO64_TAG+n))
     elseif typemin(Int32) <= n <= typemax(Int32)
         writetag(s.io, SHORTINT64_TAG)
         write(s.io, Int32(n))
@@ -1125,7 +1125,7 @@ function deserialize_array(s::AbstractSerializer)
             i = 1
             while i <= n
                 b = read(s.io, UInt8)::UInt8
-                v = (b >> 7) != 0
+                v = !iszero(b >> 0x07)
                 count = b & 0x7f
                 nxt = i + count
                 while i < nxt
