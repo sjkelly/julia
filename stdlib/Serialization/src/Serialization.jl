@@ -9,7 +9,7 @@ module Serialization
 
 import Base: GMP, Bottom, unsafe_convert, uncompressed_ast
 import Core: svec, SimpleVector
-using Base: unaliascopy, unwrap_unionall, require_one_based_indexing
+using Base: bitcast, unaliascopy, unsafe_trunc, unwrap_unionall, require_one_based_indexing
 using Core.IR
 
 export serialize, deserialize, AbstractSerializer, Serializer
@@ -142,7 +142,7 @@ writetag(s::IO, tag) = (write(s, UInt8(tag)); nothing)
 
 function write_as_tag(s::IO, tag)
     tag < VALUE_TAGS && write(s, UInt8(0))
-    write(s, Base.unsafe_trunc(UInt8, tag))
+    write(s, unsafe_trunc(UInt8, tag))
     nothing
 end
 
@@ -152,7 +152,7 @@ function serialize_cycle(s::AbstractSerializer, @nospecialize(x))
     if offs != -1
         if offs <= typemax(UInt16)
             writetag(s.io, SHORTBACKREF_TAG)
-            write(s.io, Base.unsafe_trunc(UInt16, offs))
+            write(s.io, unsafe_trunc(UInt16, offs))
         elseif offs <= typemax(Int32)
             writetag(s.io, BACKREF_TAG)
             write(s.io, Int32(offs))
@@ -191,10 +191,10 @@ function serialize(s::AbstractSerializer, t::Tuple)
     l = length(t)
     if l <= 255
         writetag(s.io, TUPLE_TAG)
-        write(s.io, Base.unsafe_trunc(UInt8, l))
+        write(s.io, unsafe_trunc(UInt8, l))
     else
         writetag(s.io, LONGTUPLE_TAG)
-        write(s.io, Base.unsafe_trunc(UInt32, l))
+        write(s.io, unsafe_trunc(UInt32, l))
     end
     for x in t
         serialize(s, x)
@@ -221,10 +221,10 @@ function serialize(s::AbstractSerializer, x::Symbol)
     end
     if len <= 255
         writetag(s.io, SYMBOL_TAG)
-        write(s.io, Base.unsafe_trunc(UInt8, len))
+        write(s.io, unsafe_trunc(UInt8, len))
     else
         writetag(s.io, LONGSYMBOL_TAG)
-        write(s.io, Base.unsafe_trunc(Int32, len))
+        write(s.io, unsafe_trunc(Int32, len))
     end
     unsafe_write(s.io, pname, len)
     nothing
@@ -238,14 +238,14 @@ function serialize_array_data(s::IO, a)
         count = 1
         for i = 2:length(a)
             if a[i] != last || count == 127
-                write(s, Base.unsafe_trunc(UInt8, (Base.bitcast(UInt8, last) << 0x07) | count))
+                write(s, unsafe_trunc(UInt8, (Base.bitcast(UInt8, last) << 0x07) | count))
                 last = a[i]
                 count = 1
             else
                 count += 1
             end
         end
-        write(s, Base.unsafe_trunc(UInt8, (Base.bitcast(UInt8, last) << 0x07) | count))
+        write(s, unsafe_trunc(UInt8, (Base.bitcast(UInt8, last) << 0x07) | count))
     else
         write(s, a)
     end
@@ -292,7 +292,7 @@ function serialize(s::AbstractSerializer, ss::String)
     end
     if len <= 255
         writetag(s.io, STRING_TAG)
-        write(s.io, Base.unsafe_trunc(UInt8, len))
+        write(s.io, unsafe_trunc(UInt8, len))
     else
         writetag(s.io, LONGSTRING_TAG)
         write(s.io, Int64(len))
@@ -324,7 +324,7 @@ function serialize(s::AbstractSerializer, ex::Expr)
     l = length(ex.args)
     if l <= 255
         writetag(s.io, EXPR_TAG)
-        write(s.io, Base.unsafe_trunc(UInt8, l))
+        write(s.io, unsafe_trunc(UInt8, l))
     else
         writetag(s.io, LONGEXPR_TAG)
         write(s.io, Int32(l))
@@ -576,7 +576,7 @@ end
 
 function serialize(s::AbstractSerializer, n::Int32)
     if 0 <= n <= (n_int_literals-1) # <= 32
-        write(s.io, Base.unsafe_trunc(UInt8, ZERO32_TAG+n))
+        write(s.io, unsafe_trunc(UInt8, ZERO32_TAG+n))
     else
         writetag(s.io, INT32_TAG)
         write(s.io, n)
@@ -586,7 +586,7 @@ end
 
 function serialize(s::AbstractSerializer, n::Int64)
     if 0 <= n <= (n_int_literals-1)
-        write(s.io, Base.unsafe_trunc(UInt8, ZERO64_TAG+n))
+        write(s.io, unsafe_trunc(UInt8, ZERO64_TAG+n))
     elseif typemin(Int32) <= n <= typemax(Int32)
         writetag(s.io, SHORTINT64_TAG)
         write(s.io, Int32(n))
@@ -933,7 +933,13 @@ deserialize_tuple(s::AbstractSerializer, len) = ntuple(i->deserialize(s), len)
 
 function deserialize_svec(s::AbstractSerializer)
     n = read(s.io, Int32)
-    svec(Any[ deserialize(s) for i=1:n ]...)
+    n == 1 && return ccall(:jl_svec1, Core.SimpleVector, (Any), deserialize(s))
+    n == 2 && return ccall(:jl_svec2, Core.SimpleVector, (Any,Any), deserialize(s), deserialize(s))
+    a = Vector{Any}(undef, n)
+    @inbounds for i = 1:n
+        a[i] = deserialize(s)
+    end
+    svec(a...)
 end
 
 function deserialize_module(s::AbstractSerializer)
@@ -1268,7 +1274,11 @@ function deserialize_datatype(s::AbstractSerializer, full::Bool)
             elseif np == 4
                 t = Tuple{deserialize(s), deserialize(s), deserialize(s), deserialize(s)}
             else
-                t = Tuple{Any[ deserialize(s) for i=1:np ]...}
+                a = Vector{Any}(undef, np)
+                @inbounds for i = 1:np
+                    a[i] = deserialize(s)
+                end
+                t = Tuple{a...}
             end
         else
             t = ty
