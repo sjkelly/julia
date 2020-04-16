@@ -235,17 +235,17 @@ function serialize_array_data(s::IO, a)
     isempty(a) && return 0
     if eltype(a) === Bool
         last = a[1]
-        count = 1
+        count = 0x01
         for i = 2:length(a)
-            if a[i] != last || count == 127
-                write(s, unsafe_trunc(UInt8, (Base.bitcast(UInt8, last) << 0x07) | count))
+            if a[i] != last || count == 0x7f
+                write(s, (Base.bitcast(UInt8, last) << 0x07) | count)
                 last = a[i]
-                count = 1
+                count = 0x01
             else
-                count += 1
+                count += 0x01
             end
         end
-        write(s, unsafe_trunc(UInt8, (Base.bitcast(UInt8, last) << 0x07) | count))
+        write(s, (Base.bitcast(UInt8, last) << 0x07) | count)
     else
         write(s, a)
     end
@@ -933,7 +933,7 @@ deserialize_tuple(s::AbstractSerializer, len) = ntuple(i->deserialize(s), len)
 
 function deserialize_svec(s::AbstractSerializer)
     n = read(s.io, Int32)
-    n == 1 && return ccall(:jl_svec1, Core.SimpleVector, (Any), deserialize(s))
+    n == 1 && return ccall(:jl_svec1, Core.SimpleVector, (Any,), deserialize(s))
     n == 2 && return ccall(:jl_svec2, Core.SimpleVector, (Any,Any), deserialize(s), deserialize(s))
     a = Vector{Any}(undef, n)
     @inbounds for i = 1:n
@@ -1166,7 +1166,10 @@ function deserialize_expr(s::AbstractSerializer, len)
     e = Expr(:temp)
     resolve_ref_immediately(s, e)
     e.head = deserialize(s)::Symbol
-    e.args = Any[ deserialize(s) for i = 1:len ]
+    e.args = Vector{Any}(undef, len)
+    @inbounds for i in 1:len
+        e.args[i] = deserialize(s)
+    end
     e
 end
 
