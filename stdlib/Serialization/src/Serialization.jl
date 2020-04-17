@@ -140,6 +140,9 @@ const SHARED_REF_TAG       = Int32(o0+17)
 
 writetag(s::IO, tag) = (write(s, UInt8(tag)); nothing)
 
+# buffer for deserializing type data that is later copied by C api
+const buf_any = []
+
 function write_as_tag(s::IO, tag)
     tag < VALUE_TAGS && write(s, UInt8(0))
     write(s, unsafe_trunc(UInt8, tag))
@@ -757,7 +760,11 @@ It has been designed with simplicity and performance as a goal and does not vali
 the data read. Malformed data can result in process termination. The caller has to ensure
 the integrity and correctness of data read from `stream`.
 """
-deserialize(s::IO) = deserialize(Serializer(s))
+function deserialize(s::IO)
+    d = deserialize(Serializer(s))
+    empty!(buf_any)
+    return d
+end
 
 """
     deserialize(filename::AbstractString)
@@ -937,11 +944,11 @@ function deserialize_svec(s::AbstractSerializer)
     n == 2 && return ccall(:jl_svec2, Core.SimpleVector, (Any,Any), deserialize(s), deserialize(s))
     n == 3 && return ccall(:jl_svec3, Core.SimpleVector, (Any,Any,Any), deserialize(s), deserialize(s), deserialize(s))
     n == 4 && return ccall(:jl_svec4, Core.SimpleVector, (Any,Any,Any,Any), deserialize(s), deserialize(s), deserialize(s), deserialize(s))
-    a = Vector{Any}(undef, n)
+    resize!(buf_any, n)
     @inbounds for i = 1:n
-        a[i] = deserialize(s)
+        buf_any[i] = deserialize(s)
     end
-    svec(a...)
+    svec(buf_any)
 end
 
 function deserialize_module(s::AbstractSerializer)
@@ -1279,11 +1286,11 @@ function deserialize_datatype(s::AbstractSerializer, full::Bool)
             elseif np == 4
                 t = Tuple{deserialize(s), deserialize(s), deserialize(s), deserialize(s)}
             else
-                a = Vector{Any}(undef, np)
+                resize!(buf_any, np)
                 @inbounds for i = 1:np
-                    a[i] = deserialize(s)
+                    buf_any[i] = deserialize(s)
                 end
-                t = Tuple{a...}
+                t = Tuple{buf_any...}
             end
         else
             t = ty
@@ -1358,17 +1365,17 @@ function deserialize(s::AbstractSerializer, t::DataType)
         return ccall(:jl_new_struct_uninit, Any, (Any,), t)
     else
         na = nf
-        vflds = Vector{Any}(undef, nf)
+        resize!(buf_any, nf)
         @inbounds for i in 1:nf
             tag = Int32(read(s.io, UInt8)::UInt8)
             if tag != UNDEFREF_TAG
                 f = handle_deserialize(s, tag)
-                na >= i && (vflds[i] = f)
+                na >= i && (buf_any[i] = f)
             else
                 na >= i && (na = i - 1) # rest of tail must be undefined values
             end
         end
-        return ccall(:jl_new_structv, Any, (Any, Ptr{Any}, UInt32), t, vflds, na)
+        return ccall(:jl_new_structv, Any, (Any, Ptr{Any}, UInt32), t, buf_any, na)
     end
 end
 
