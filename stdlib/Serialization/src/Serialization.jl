@@ -19,7 +19,7 @@ abstract type AbstractSerializer end
 mutable struct Serializer{I<:IO} <: AbstractSerializer
     io::I
     counter::Int
-    table::IdDict{Int,Any}
+    table::IdDict{Any,Any}
     pending_refs::Vector{Int}
     known_object_data::Dict{UInt64,Any}
     Serializer{I}(io::I) where I<:IO = new(io, 0, IdDict(), Int[], Dict{UInt64,Any}())
