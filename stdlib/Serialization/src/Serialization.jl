@@ -19,7 +19,7 @@ abstract type AbstractSerializer end
 mutable struct Serializer{I<:IO} <: AbstractSerializer
     io::I
     counter::Int
-    table::IdDict{Any,Any}
+    table::IdDict{Int,Any}
     pending_refs::Vector{Int}
     known_object_data::Dict{UInt64,Any}
     Serializer{I}(io::I) where I<:IO = new(io, 0, IdDict(), Int[], Dict{UInt64,Any}())
@@ -1136,7 +1136,7 @@ function deserialize_array(s::AbstractSerializer)
                 v = !iszero(b >> 0x07)
                 count = b & 0x7f
                 nxt = i + count
-                while i < nxt
+                @inbounds while i < nxt
                     A[i] = v
                     i += 1
                 end
@@ -1359,7 +1359,7 @@ function deserialize(s::AbstractSerializer, t::DataType)
     else
         na = nf
         vflds = Vector{Any}(undef, nf)
-        for i in 1:nf
+        @inbounds for i in 1:nf
             tag = Int32(read(s.io, UInt8)::UInt8)
             if tag != UNDEFREF_TAG
                 f = handle_deserialize(s, tag)
@@ -1373,7 +1373,7 @@ function deserialize(s::AbstractSerializer, t::DataType)
 end
 
 function deserialize_dict(s::AbstractSerializer, T::Type{<:AbstractDict})
-    n = read(s.io, Int32)
+    n = Int(read(s.io, Int32))
     t = T(); sizehint!(t, n)
     deserialize_cycle(s, t)
     for i = 1:n
