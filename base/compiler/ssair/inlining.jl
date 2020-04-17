@@ -1310,7 +1310,7 @@ function find_inferred(mi::MethodInstance, @nospecialize(atypes), sv::Optimizati
     if isa(inf_result, InferenceResult)
         let inferred_src = inf_result.src
             if isa(inferred_src, CodeInfo)
-                return svec(false, inferred_src)
+                return ccall(:jl_svec2, Core.SimpleVector, (Any,Any), false, inferred_src)
             end
             if isa(inferred_src, Const) && is_inlineable_constant(inferred_src.val)
                 return svec(true, quoted(inferred_src.val),)
@@ -1322,9 +1322,9 @@ function find_inferred(mi::MethodInstance, @nospecialize(atypes), sv::Optimizati
     if linfo isa CodeInstance
         if invoke_api(linfo) == 2
             # in this case function can be inlined to a constant
-            return svec(true, quoted(linfo.rettype_const))
+            return ccall(:jl_svec2, Core.SimpleVector, (Any,Any), true, quoted(linfo.rettype_const))
         end
-        return svec(false, linfo.inferred)
+        return ccall(:jl_svec2, Core.SimpleVector, (Any,Any), false, linfo.inferred)
     end
-    return svec(false, nothing)
+    return ccall(:jl_svec2, Core.SimpleVector, (Any,Any), false, nothing)
 end

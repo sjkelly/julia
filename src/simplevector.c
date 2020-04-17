@@ -53,6 +53,31 @@ JL_DLLEXPORT jl_svec_t *jl_svec2(void *a, void *b)
     return v;
 }
 
+JL_DLLEXPORT jl_svec_t *jl_svec3(void *a, void *b, void *c)
+{
+    jl_ptls_t ptls = jl_get_ptls_states();
+    jl_svec_t *v = (jl_svec_t*)jl_gc_alloc(ptls, sizeof(void*) * 4,
+                                           jl_simplevector_type);
+    jl_svec_set_len_unsafe(v, 3);
+    jl_svecset(v, 0, a);
+    jl_svecset(v, 1, b);
+    jl_svecset(v, 2, c);
+    return v;
+}
+
+JL_DLLEXPORT jl_svec_t *jl_svec4(void *a, void *b, void *c, void *d)
+{
+    jl_ptls_t ptls = jl_get_ptls_states();
+    jl_svec_t *v = (jl_svec_t*)jl_gc_alloc(ptls, sizeof(void*) * 5,
+                                           jl_simplevector_type);
+    jl_svec_set_len_unsafe(v, 4);
+    jl_svecset(v, 0, a);
+    jl_svecset(v, 1, b);
+    jl_svecset(v, 2, c);
+    jl_svecset(v, 3, d);
+    return v;
+}
+
 JL_DLLEXPORT jl_svec_t *jl_alloc_svec_uninit(size_t n)
 {
     jl_ptls_t ptls = jl_get_ptls_states();

@@ -935,6 +935,8 @@ function deserialize_svec(s::AbstractSerializer)
     n = read(s.io, Int32)
     n == 1 && return ccall(:jl_svec1, Core.SimpleVector, (Any,), deserialize(s))
     n == 2 && return ccall(:jl_svec2, Core.SimpleVector, (Any,Any), deserialize(s), deserialize(s))
+    n == 3 && return ccall(:jl_svec3, Core.SimpleVector, (Any,Any,Any), deserialize(s), deserialize(s), deserialize(s))
+    n == 4 && return ccall(:jl_svec4, Core.SimpleVector, (Any,Any,Any,Any), deserialize(s), deserialize(s), deserialize(s), deserialize(s))
     a = Vector{Any}(undef, n)
     @inbounds for i = 1:n
         a[i] = deserialize(s)
