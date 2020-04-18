@@ -16,8 +16,8 @@ const MAX_INLINE_CONST_SIZE = 256
 # no new values may be introduced, so the parameter `source` encodes the set of all values already present
 # the outermost tuple type is permitted to have up to `allowed_tuplelen` parameters
 function limit_type_size(@nospecialize(t), @nospecialize(compare), @nospecialize(source), allowed_tupledepth::Int, allowed_tuplelen::Int)
-    source = svec(unwrap_unionall(compare), unwrap_unionall(source))
-    source[1] === source[2] && (source = svec(source[1]))
+    source = svec2(unwrap_unionall(compare), unwrap_unionall(source))
+    source[1] === source[2] && (source = svec1(source[1]))
     type_more_complex(t, compare, source, 1, allowed_tupledepth, allowed_tuplelen) || return t
     r = _limit_type_size(t, compare, source, 1, allowed_tuplelen)
     @assert t <: r

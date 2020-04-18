@@ -933,6 +933,7 @@ deserialize_tuple(s::AbstractSerializer, len) = ntuple(i->deserialize(s), len)
 
 function deserialize_svec(s::AbstractSerializer)
     n = read(s.io, Int32)
+    n == 0 && return ccall(:jl_alloc_svec, Core.SimpleVector, (Int,),0)
     n == 1 && return ccall(:jl_svec1, Core.SimpleVector, (Any,), deserialize(s))
     n == 2 && return ccall(:jl_svec2, Core.SimpleVector, (Any,Any), deserialize(s), deserialize(s))
     n == 3 && return ccall(:jl_svec3, Core.SimpleVector, (Any,Any,Any), deserialize(s), deserialize(s), deserialize(s))

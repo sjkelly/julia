@@ -578,6 +578,26 @@ end
 
 # SimpleVector
 
+function svec0()
+    ccall(:jl_alloc_svec, Core.SimpleVector, (Int,),0)
+end
+
+function svec1(@nospecialize(a))
+    ccall(:jl_svec1, Core.SimpleVector, (Any,), a)
+end
+
+function svec2(@nospecialize(a),@nospecialize(b))
+    ccall(:jl_svec2, Core.SimpleVector, (Any,Any), a, b)
+end
+
+function svec3(@nospecialize(a),@nospecialize(b),@nospecialize(c))
+    ccall(:jl_svec3, Core.SimpleVector, (Any,Any,Any), a, b, c)
+end
+
+function svec4(@nospecialize(a),@nospecialize(b),@nospecialize(c),@nospecialize(d))
+    ccall(:jl_svec4, Core.SimpleVector, (Any,Any,Any,Any), a, b, c, d)
+end
+
 function getindex(v::SimpleVector, i::Int)
     @boundscheck if !(1 <= i <= length(v))
         throw(BoundsError(v,i))

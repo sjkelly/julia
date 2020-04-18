@@ -69,7 +69,15 @@ function matching_cache_argtypes(linfo::MethodInstance, ::Nothing)
     if !toplevel && linfo.def.isva
         if linfo.specTypes == Tuple
             if nargs > 1
-                linfo_argtypes = svec(Any[Any for i = 1:(nargs - 1)]..., Tuple.parameters[1])
+                if nargs == 2
+                    linfo_argtypes = svec2(Any, Tuple.parameters[1])
+                elseif nargs == 3
+                    linfo_argtypes = svec3(Any, Any, Tuple.parameters[1])
+                elseif nargs == 4
+                    linfo_argtypes = svec4(Any, Any, Any, Tuple.parameters[1])
+                else
+                    linfo_argtypes = svec(Any[Any for i = 1:(nargs - 1)]..., Tuple.parameters[1])
+                end
             end
             vargtype = Tuple
         else
@@ -85,10 +93,12 @@ function matching_cache_argtypes(linfo::MethodInstance, ::Nothing)
                     vargtype = Tuple{}
                 end
             else
-                vargtype_elements = Any[]
-                for p in linfo_argtypes[nargs:linfo_argtypes_length]
+                l = linfo_argtypes[nargs:linfo_argtypes_length]
+                vargtype_elements = Vector{Any}(undef, length(l))
+                for i in eachindex(linfo_argtypes[nargs:linfo_argtypes_length])
+                    p = linfo_argtypes[nargs:linfo_argtypes_length][i]
                     p = isvarargtype(p) ? unconstrain_vararg_length(p) : p
-                    push!(vargtype_elements, rewrap(p, linfo.specTypes))
+                    vargtype_elements[i] = rewrap(p, linfo.specTypes)
                 end
                 for i in 1:length(vargtype_elements)
                     atyp = vargtype_elements[i]

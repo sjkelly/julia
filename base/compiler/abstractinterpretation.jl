@@ -99,7 +99,7 @@ function abstract_call_gf_by_type(@nospecialize(f), argtypes::Vector{Any}, @nosp
         if splitunions
             splitsigs = switchtupleunion(sig)
             for sig_n in splitsigs
-                rt, edgecycle1, edge = abstract_call_method(method, sig_n, svec(), multiple_matches, sv)
+                rt, edgecycle1, edge = abstract_call_method(method, sig_n, svec0(), multiple_matches, sv)
                 if edge !== nothing
                     push!(edges, edge)
                 end
