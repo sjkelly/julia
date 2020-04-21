@@ -68,7 +68,13 @@ function matching_cache_argtypes(linfo::MethodInstance, ::Nothing)
     # to the appropriate `Tuple` type or `PartialStruct` instance.
     if !toplevel && linfo.def.isva
         if linfo.specTypes == Tuple
-            if nargs > 1
+            if nargs == 2
+                linfo_argtypes = svec(Any, Tuple.parameters[1])
+            elseif nargs == 3
+                linfo_argtypes = svec(Any, Any, Tuple.parameters[1])
+            elseif nargs == 4
+                linfo_argtypes = svec(Any, Any, Any, Tuple.parameters[1])
+            elseif nargs > 4
                 linfo_argtypes = svec(Any[Any for i = 1:(nargs - 1)]..., Tuple.parameters[1])
             end
             vargtype = Tuple
