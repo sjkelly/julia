@@ -993,23 +993,23 @@ function abstract_eval(@nospecialize(e), vtypes::VarTable, sv::InferenceState)
             ats = Vector{Any}(undef, length(e.args)-1)
             anyconst = false
             allconst = true
-            for i = 2:length(e.args)
-                at = abstract_eval(e.args[i], vtypes, sv)
+            for i = 1:length(e.args)-1
+                at = abstract_eval(e.args[i+1], vtypes, sv)
                 if !anyconst
                     anyconst = has_nontrivial_const_info(at)
                 end
-                ats[i-1] = at
+                ats[i] = at
                 if at === Bottom
                     t = Bottom
                     allconst = anyconst = false
                     break
                 elseif at isa Const
-                    if !(at.val isa fieldtype(t, i - 1))
+                    if !(at.val isa fieldtype(t, i ))
                         t = Bottom
                         allconst = anyconst = false
                         break
                     end
-                    args[i-1] = at.val
+                    args[i] = at.val
                 else
                     allconst = false
                 end
@@ -1236,7 +1236,7 @@ function typeinf_local(frame::InferenceState)
                     if isa(fname, Slot)
                         changes = StateUpdate(fname, VarState(Any, false), changes)
                     end
-                elseif hd === :inbounds || hd === :meta || hd === :loopinfo || hd == :code_coverage_effect
+                elseif hd === :inbounds || hd === :meta || hd === :loopinfo || hd === :code_coverage_effect
                     # these do not generate code
                 else
                     t = abstract_eval(stmt, changes, frame)
