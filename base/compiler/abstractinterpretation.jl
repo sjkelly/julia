@@ -654,8 +654,7 @@ function pure_eval_call(@nospecialize(f), argtypes::Vector{Any})
     end
 end
 
-function argtype_by_index(argtypes::Vector{Any}, i::Int)
-    n = length(argtypes)
+function argtype_by_index(argtypes::Vector{Any}, i::Int, n::Int)
     if isvarargtype(argtypes[n])
         return i >= n ? unwrapva(argtypes[n]) : argtypes[i]
     else
@@ -663,8 +662,7 @@ function argtype_by_index(argtypes::Vector{Any}, i::Int)
     end
 end
 
-function argtype_tail(argtypes::Vector{Any}, i::Int)
-    n = length(argtypes)
+function argtype_tail(argtypes::Vector{Any}, i::Int, n::Int)
     if isvarargtype(argtypes[n]) && i > n
         i = n
     end
@@ -677,14 +675,14 @@ function abstract_call_known(@nospecialize(f), fargs::Union{Nothing,Vector{Any}}
 
     if isa(f, Builtin)
         if f === _apply
-            ft = argtype_by_index(argtypes, 2)
+            ft = argtype_by_index(argtypes, 2, la)
             ft === Bottom && return Bottom
-            return abstract_apply(nothing, ft, argtype_tail(argtypes, 3), vtypes, sv, max_methods)
+            return abstract_apply(nothing, ft, argtype_tail(argtypes, 3, la), vtypes, sv, max_methods)
         elseif f === _apply_iterate
-            itft = argtype_by_index(argtypes, 2)
-            ft = argtype_by_index(argtypes, 3)
+            itft = argtype_by_index(argtypes, 2, la)
+            ft = argtype_by_index(argtypes, 3, la)
             (itft === Bottom || ft === Bottom) && return Bottom
-            return abstract_apply(itft, ft, argtype_tail(argtypes, 4), vtypes, sv, max_methods)
+            return abstract_apply(itft, ft, argtype_tail(argtypes, 4, la), vtypes, sv, max_methods)
         elseif f === ifelse && fargs isa Vector{Any} && la == 4 && argtypes[2] isa Conditional
             # try to simulate this as a real conditional (`cnd ? x : y`), so that the penalty for using `ifelse` instead isn't too high
             cnd = argtypes[2]::Conditional

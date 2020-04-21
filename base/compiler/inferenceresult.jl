@@ -33,11 +33,12 @@ function matching_cache_argtypes(linfo::MethodInstance, given_argtypes::Vector)
     @assert length(given_argtypes) >= (nargs - 1)
     given_argtypes = anymap(widenconditional, given_argtypes)
     if linfo.def.isva
+        len_given_argtypes = length(given_argtypes)
         isva_given_argtypes = Vector{Any}(undef, nargs)
         for i = 1:(nargs - 1)
-            isva_given_argtypes[i] = argtype_by_index(given_argtypes, i)
+            isva_given_argtypes[i] = argtype_by_index(given_argtypes, i, len_given_argtypes)
         end
-        if length(given_argtypes) >= nargs || !isvarargtype(given_argtypes[end])
+        if len_given_argtypes >= nargs || !isvarargtype(given_argtypes[end])
             isva_given_argtypes[nargs] = tuple_tfunc(given_argtypes[nargs:end])
         else
             isva_given_argtypes[nargs] = tuple_tfunc(given_argtypes[end:end])
