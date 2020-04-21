@@ -1081,7 +1081,7 @@ function apply_type_tfunc(@nospecialize(headtypetype), @nospecialize args...)
     end
     uncertain = false
     canconst = true
-    tparams = Any[]
+    tparams = Vector{Any}(undef,largs)
     outervars = Any[]
     varnamectr = 1
     for i = 1:largs
@@ -1089,12 +1089,12 @@ function apply_type_tfunc(@nospecialize(headtypetype), @nospecialize args...)
         if isType(ai)
             aip1 = ai.parameters[1]
             canconst &= !has_free_typevars(aip1)
-            push!(tparams, aip1)
+            tparams[i] = aip1
         elseif isa(ai, Const) && (isa(ai.val, Type) || isa(ai.val, TypeVar) || valid_tparam(ai.val))
-            push!(tparams, ai.val)
+            tparams[i] = ai.val
         elseif isa(ai, PartialTypeVar)
             canconst = false
-            push!(tparams, ai.tv)
+            tparams[i] = ai.tv
         else
             uncertain = true
             # These blocks improve type info but make compilation a bit slower.
@@ -1107,16 +1107,16 @@ function apply_type_tfunc(@nospecialize(headtypetype), @nospecialize args...)
             #end
             if istuple
                 if i == largs
-                    push!(tparams, Vararg)
+                    tparams[i] = Vararg
                 # XXX
                 #elseif isT
-                #    push!(tparams, rewrap_unionall(unw.parameters[1], ai))
+                #    tparams[i] = rewrap_unionall(unw.parameters[1], ai)
                 else
-                    push!(tparams, Any)
+                    tparams[i] = Any
                 end
             # XXX
             #elseif isT
-            #    push!(tparams, unw.parameters[1])
+            #    tparams[i] = unw.parameters[1]
             #    while isa(ai, UnionAll)
             #        push!(outervars, ai.var)
             #        ai = ai.body
@@ -1125,7 +1125,7 @@ function apply_type_tfunc(@nospecialize(headtypetype), @nospecialize args...)
                 tvname = varnamectr <= length(_tvarnames) ? _tvarnames[varnamectr] : :_Z
                 varnamectr += 1
                 v = TypeVar(tvname)
-                push!(tparams, v)
+                tparams[i] = v
                 push!(outervars, v)
             end
         end
