@@ -1184,6 +1184,10 @@ function tuple_tfunc(atypes::Vector{Any})
         end
     end
     if all_are_const
+        n = length(atypes)
+        n == 1 && return Const(tuple(atypes[1].val))
+        n == 2 && return Const(tuple(atypes[1].val, atypes[2].val))
+        n == 3 && return Const(tuple(atypes[1].val, atypes[2].val, atypes[3].val))
         return Const(tuple(Any[atypes[i].val for i in 1:length(atypes)]...))
     end
     params = Vector{Any}(undef, length(atypes))
