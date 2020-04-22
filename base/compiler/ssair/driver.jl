@@ -110,7 +110,7 @@ function convert_to_ircode(ci::CodeInfo, code::Vector{Any}, coverage::Bool, narg
         code[i] = stmt
         if !(stmt === nothing)
             if inbounds_depth > 0
-                flags[i] |= IR_FLAG_INBOUNDS
+                flags[i] = IR_FLAG_INBOUNDS
             end
         end
     end

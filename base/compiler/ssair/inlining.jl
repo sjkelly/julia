@@ -318,7 +318,7 @@ function ir_inline_item!(compact::IncrementalCompact, idx::Int, argexprs::Vector
     flag = compact.result_flags[idx]
     boundscheck_idx = boundscheck
     if boundscheck_idx === :default || boundscheck_idx === :propagate
-        if (flag & IR_FLAG_INBOUNDS) != 0
+        if (flag & IR_FLAG_INBOUNDS) != 0x0
             boundscheck_idx = :off
         end
     end
