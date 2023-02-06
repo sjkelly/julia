@@ -9,6 +9,7 @@ pkgs.mkShell {
     coreutils
     curl
     file # BB binary patching.
+    gfortran
     git
     patchelf # BB binary patching.
     perl
