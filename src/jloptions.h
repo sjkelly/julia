@@ -59,6 +59,7 @@ typedef struct {
     int8_t strip_metadata;
     int8_t strip_ir;
     uint64_t heap_size_hint;
+    int8_t trace_compile_comments;
 } jl_options_t;
 
 #endif

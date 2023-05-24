@@ -254,6 +254,7 @@ JL_DLLEXPORT void jl_parse_opts(int *argcp, char ***argvp)
            opt_strip_ir,
            opt_heap_size_hint,
            opt_gc_threads,
+           opt_trace_compile_comments,
     };
     static const char* const shortopts = "+vhqH:e:E:L:J:C:it:p:O:g:";
     static const struct option longopts[] = {
@@ -314,6 +315,7 @@ JL_DLLEXPORT void jl_parse_opts(int *argcp, char ***argvp)
         { "strip-metadata",  no_argument,       0, opt_strip_metadata },
         { "strip-ir",        no_argument,       0, opt_strip_ir },
         { "heap-size-hint",  required_argument, 0, opt_heap_size_hint },
+        { "trace-compile-comments", no_argument, 0, opt_trace_compile_comments},
         { 0, 0, 0, 0 }
     };
 
@@ -819,6 +821,9 @@ restart_switch:
             if (jl_options.heap_size_hint == 0)
                 jl_errorf("julia: invalid argument to --heap-size-hint without memory size specified");
 
+            break;
+        case opt_trace_compile_comments:
+            jl_options.trace_compile_comments = 1;
             break;
         case opt_gc_threads:
             errno = 0;

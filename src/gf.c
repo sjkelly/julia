@@ -2352,7 +2352,26 @@ static void record_precompile_statement(jl_method_instance_t *mi)
     if (!jl_has_free_typevars(mi->specTypes)) {
         jl_printf(s_precompile, "precompile(");
         jl_static_show(s_precompile, mi->specTypes);
-        jl_printf(s_precompile, ")\n");
+        jl_printf(s_precompile, ")");        
+        jl_bt_element_t *bt = malloc(JL_MAX_BT_SIZE*sizeof(jl_bt_element_t));
+        size_t frame_ct = rec_backtrace(bt, JL_MAX_BT_SIZE, 0);
+        jl_printf(s_precompile, "# ");
+        jl_printf(s_precompile, "frame ct: %i ", frame_ct);
+        for (int i = 0; i < frame_ct; i++){
+            if (jl_bt_is_native(&bt[i])){
+                jl_printf(s_precompile, "is native!");
+                jl_print_bt_entry_codeloc(&bt[i]);
+            } else if (jl_bt_entry_tag(bt) == JL_BT_INTERP_FRAME_TAG) {
+                jl_print_bt_entry_codeloc(&bt[i]);
+            }
+        }
+        jl_printf(s_precompile, "\n");
+        free(bt);
+        /*if (jl_options.trace_compile_comments) {
+
+        } else {
+            jl_printf("\n");
+        }*/
         if (s_precompile != JL_STDERR)
             ios_flush(&f_precompile);
     }
@@ -2565,8 +2584,7 @@ JL_DLLEXPORT int32_t jl_invoke_api(jl_code_instance_t *codeinst)
     return -1;
 }
 
-JL_DLLEXPORT jl_value_t *jl_normalize_to_compilable_sig(jl_methtable_t *mt, jl_tupletype_t *ti, jl_svec_t *env, jl_method_t *m,
-                                                        int return_if_compileable)
+JL_DLLEXPORT jl_value_t *jl_normalize_to_compilable_sig(jl_methtable_t *mt, jl_tupletype_t *ti, jl_svec_t *env, jl_method_t *m)
 {
     jl_tupletype_t *tt = NULL;
     jl_svec_t *newparams = NULL;
@@ -2590,7 +2608,7 @@ JL_DLLEXPORT jl_value_t *jl_normalize_to_compilable_sig(jl_methtable_t *mt, jl_t
     if (!is_compileable)
         is_compileable = jl_isa_compileable_sig(tt, env, m);
     JL_GC_POP();
-    return (!return_if_compileable || is_compileable) ? (jl_value_t*)tt : jl_nothing;
+    return is_compileable ? (jl_value_t*)tt : jl_nothing;
 }
 
 jl_method_instance_t *jl_normalize_to_compilable_mi(jl_method_instance_t *mi JL_PROPAGATES_ROOT)
@@ -2601,7 +2619,7 @@ jl_method_instance_t *jl_normalize_to_compilable_mi(jl_method_instance_t *mi JL_
     jl_methtable_t *mt = jl_method_get_table(def);
     if ((jl_value_t*)mt == jl_nothing)
         return mi;
-    jl_value_t *compilationsig = jl_normalize_to_compilable_sig(mt, (jl_datatype_t*)mi->specTypes, mi->sparam_vals, def, 1);
+    jl_value_t *compilationsig = jl_normalize_to_compilable_sig(mt, (jl_datatype_t*)mi->specTypes, mi->sparam_vals, def);
     if (compilationsig == jl_nothing || jl_egal(compilationsig, mi->specTypes))
         return mi;
     jl_svec_t *env = NULL;
@@ -2634,7 +2652,7 @@ jl_method_instance_t *jl_method_match_to_mi(jl_method_match_t *match, size_t wor
                 JL_UNLOCK(&mt->writelock);
             }
             else {
-                jl_value_t *tt = jl_normalize_to_compilable_sig(mt, ti, env, m, 1);
+                jl_value_t *tt = jl_normalize_to_compilable_sig(mt, ti, env, m);
                 if (tt != jl_nothing) {
                     JL_GC_PUSH2(&tt, &env);
                     if (!jl_egal(tt, (jl_value_t*)ti)) {
