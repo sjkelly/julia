@@ -17,14 +17,17 @@ The value of an untyped global variable might change at any point, possibly lead
 it difficult for the compiler to optimize code using global variables. This also applies to type-valued variables,
 i.e. type aliases on the global level. Variables should be local, or passed as arguments to functions, whenever possible.
 
-We find that global names are frequently constants, and declaring them as such greatly improves
-performance:
+It's common for global names to be constants. Declaring them as constants using the [`const`](@ref) keyword can significantly improve performance:
 
 ```julia
 const DEFAULT_VAL = 0
 ```
 
-If a global is known to always be of the same type, [the type should be annotated](@ref man-typed-globals).
+If a global is known to always be of the same type, [the type should be annotated](@ref man-typed-globals). For example:
+
+```julia
+global x::Float64 = 3.14
+```
 
 Uses of untyped globals can be optimized by annotating their types at the point of use:
 
@@ -39,6 +42,8 @@ function loop_over_global()
     return s
 end
 ```
+
+In this case, `::Vector{Float64}` is a type assertion. It tells the compiler that `x` should be treated as a vector of floating-point numbers, enabling the compiler to make performance optimizations.
 
 Passing arguments to functions is better style. It leads to more reusable code and clarifies what the inputs and outputs are.
 
