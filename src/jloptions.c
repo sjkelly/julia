@@ -212,8 +212,10 @@ static const char opts[]  =
     "                                               required to select this option. A `@` with no path\n"
     "                                               will track the current directory.\n"
 
-    " --code-coverage=tracefile.info                Append coverage information to the LCOV tracefile\n"
+    " --code-coverage=<filename>.info               Append coverage information to the LCOV file with\n"
+    "                                               `.info` extension.\n"
     "                                               (filename supports format tokens)\n"
+
 // TODO: These TOKENS are defined in `runtime_ccall.cpp`. A more verbose `--help` should include that list here.
     " --track-allocation[={none*|user|all}]         Count bytes allocated by each source line (omitting\n"
     "                                               setting is equivalent to `user`)\n"
@@ -653,8 +655,15 @@ restart_switch:
                     codecov = JL_LOG_PATH;
                     jl_options.tracked_path = optarg + 1; // skip `@`
                 }
-                else
-                    jl_errorf("julia: invalid argument to --code-coverage (%s)", optarg);
+                else {
+                    if (endof > 5) {
+                        const char* ext = strrchr(optarg, '.');
+                        if (ext == NULL || strcmp(ext, ".info") != 0)
+                            jl_errorf("julia: invalid file extension for --code-coverage, expected '.info' but got '%s' (%s)", ext, optarg);
+                    }
+                    else
+                        jl_errorf("julia: invalid argument to --code-coverage (%s)", optarg);
+                }
                 break;
             }
             else {
