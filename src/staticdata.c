@@ -742,6 +742,102 @@ static uintptr_t jl_fptr_id(void *fptr)
 #define jl_queue_for_serialization(s, v) jl_queue_for_serialization_((s), (jl_value_t*)(v), 1, 0)
 static void jl_queue_for_serialization_(jl_serializer_state *s, jl_value_t *v, int recursive, int immediate) JL_GC_DISABLED;
 
+<<<<<<< Updated upstream
+||||||| Stash base
+static void print_retainers(jl_value_t *v) JL_GC_DISABLED
+{
+    fprintf(stderr, "retained by: \n");
+    while (1) {
+        v = (jl_value_t *)ptrhash_get(&retainers, v);
+        if (v == NULL || v == HT_NOTFOUND)
+            return;
+
+        ios_t buf;
+        ios_mem(&buf, IOS_INLSIZE);
+        buf.growable = 0; // Restrict to inline buffer to avoid massive output
+
+        jl_static_show((JL_STREAM*)&buf, v);
+        if (buf.size >= buf.maxsize - 1) {
+            memset(&buf.buf[IOS_INLSIZE - 4], '.', 3);
+            buf.buf[IOS_INLSIZE - 1] = '\0';
+        } else {
+            buf.buf[buf.size] = '\0';
+            buf.size += 1;
+        }
+        for (int i = 0; i < IOS_INLSIZE; i++) {
+            if (buf.buf[i] == '\n') buf.buf[i] = ' ';
+        }
+
+        if (ptrhash_get(&retainers, v) == NULL)
+            fprintf(stderr, " └ %s", buf.buf);
+        else
+            fprintf(stderr, " ├ %s", buf.buf);
+
+
+        ios_t tbuf;
+        ios_mem(&tbuf, IOS_INLSIZE);
+        buf.growable = 0; // Restrict to inline buffer to avoid massive output
+
+        jl_static_show((JL_STREAM*)&tbuf, jl_typeof(v));
+        if (tbuf.size >= buf.maxsize - 1) {
+            memset(&tbuf.buf[IOS_INLSIZE - 4], '.', 3);
+            tbuf.buf[IOS_INLSIZE - 1] = '\0';
+        } else {
+            tbuf.buf[buf.size] = '\0';
+            tbuf.size += 1;
+        }
+        tbuf.buf[tbuf.size - 1] = '\0';
+        fprintf(stderr, "::%s\n", tbuf.buf);
+    }
+}
+=======
+// static void print_retainers(jl_value_t *v) JL_GC_DISABLED
+// {
+//     fprintf(stderr, "retained by: \n");
+//     while (1) {
+//         v = (jl_value_t *)ptrhash_get(&retainers, v);
+//         if (v == NULL || v == HT_NOTFOUND)
+//             return;
+
+//         ios_t buf;
+//         ios_mem(&buf, IOS_INLSIZE);
+//         buf.growable = 0; // Restrict to inline buffer to avoid massive output
+
+//         jl_static_show((JL_STREAM*)&buf, v);
+//         if (buf.size >= buf.maxsize - 1) {
+//             memset(&buf.buf[IOS_INLSIZE - 4], '.', 3);
+//             buf.buf[IOS_INLSIZE - 1] = '\0';
+//         } else {
+//             buf.buf[buf.size] = '\0';
+//             buf.size += 1;
+//         }
+//         for (int i = 0; i < IOS_INLSIZE; i++) {
+//             if (buf.buf[i] == '\n') buf.buf[i] = ' ';
+//         }
+
+//         if (ptrhash_get(&retainers, v) == NULL)
+//             fprintf(stderr, " └ %s", buf.buf);
+//         else
+//             fprintf(stderr, " ├ %s", buf.buf);
+
+
+//         ios_t tbuf;
+//         ios_mem(&tbuf, IOS_INLSIZE);
+//         buf.growable = 0; // Restrict to inline buffer to avoid massive output
+
+//         jl_static_show((JL_STREAM*)&tbuf, jl_typeof(v));
+//         if (tbuf.size >= buf.maxsize - 1) {
+//             memset(&tbuf.buf[IOS_INLSIZE - 4], '.', 3);
+//             tbuf.buf[IOS_INLSIZE - 1] = '\0';
+//         } else {
+//             tbuf.buf[buf.size] = '\0';
+//             tbuf.size += 1;
+//         }
+//         tbuf.buf[tbuf.size - 1] = '\0';
+//         fprintf(stderr, "::%s\n", tbuf.buf);
+//     }
+// }
+>>>>>>> Stashed changes
 
 static void jl_queue_module_for_serialization(jl_serializer_state *s, jl_module_t *m) JL_GC_DISABLED
 {
